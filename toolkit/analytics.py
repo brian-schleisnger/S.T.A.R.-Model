@@ -28,6 +28,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 # Project imports
 from .base import run_sql_query, get_join_clause, TABLE_DIMENSIONS
+from .validators import validate_safe_python_code, SecurityViolationError
 from agent.memory import DataFrameMemory
 
 YEARLY_WACC = 0.1
@@ -48,73 +49,6 @@ __all__ = [
     "run_neural_network_tool",
     "run_optimization_tool"
 ]
-
-
-# Define explicit lists of forbidden operations
-FORBIDDEN_MODULES = {
-    'os', 'sys', 'subprocess', 'shutil', 'databricks', 
-    'pg8000', 'sqlalchemy', 'requests', 'urllib'
-}
-FORBIDDEN_FUNCTIONS = {'eval', 'exec', 'open', '__import__'}
-
-class SecurityValidator(ast.NodeVisitor):
-    """Walks the Abstract Syntax Tree to identify forbidden imports or function calls."""
-    def __init__(self):
-        self.violations = []
-
-    def visit_Import(self, node):
-        for alias in node.names:
-            base_module = alias.name.split('.')[0]
-            if base_module in FORBIDDEN_MODULES:
-                self.violations.append(f"Importing module '{alias.name}' is strictly forbidden.")
-        self.generic_visit(node)
-
-    def visit_ImportFrom(self, node):
-        if node.module:
-            base_module = node.module.split('.')[0]
-            if base_module in FORBIDDEN_MODULES:
-                self.violations.append(f"Importing from module '{node.module}' is strictly forbidden.")
-        self.generic_visit(node)
-
-    def visit_Call(self, node):
-        if isinstance(node.func, ast.Name):
-            if node.func.id in FORBIDDEN_FUNCTIONS:
-                self.violations.append(f"Calling built-in function '{node.func.id}()' is strictly forbidden.")
-        self.generic_visit(node)
-
-def is_safe_python_code(code: str) -> Tuple[bool, str]:
-    """
-    Validates Python code for security using AST parsing and targeted Regex.
-    Returns (True, "Safe") if clean, or (False, "Reason") if blocked.
-    """
-    # 1. AST-based check for imports and dangerous built-ins
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        return False, f"SyntaxError in generated code: {str(e)}"
-    
-    validator = SecurityValidator()
-    validator.visit(tree)
-    
-    if validator.violations:
-        return False, " | ".join(validator.violations)
-        
-    # 2. Regex-based check for destructive SQL commands inside strings
-    # Using word boundaries (\b) and space matching to avoid false positives on words like "update_df"
-    sql_patterns = [
-        r'\bdrop\s+table\b',
-        r'\bdelete\s+from\b',
-        r'\bupdate\s+[a-zA-Z0-9_]+\s+set\b',
-        r'\binsert\s+into\b',
-        r'\balter\s+table\b'
-    ]
-    
-    code_lower = code.lower()
-    for pattern in sql_patterns:
-        if re.search(pattern, code_lower):
-            return False, f"Code contains forbidden SQL mutation pattern."
-            
-    return True, "Code is safe."
 
 
 @mlflow.trace(name="link_tables")
@@ -1128,9 +1062,10 @@ def execute_python_tool(
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
             
         # --- 2. NEW AST Security Check ---
-        is_safe, security_msg = is_safe_python_code(code)
-        if not is_safe:
-            return {"text": f"Error: {security_msg} Execution blocked for security.", "data": None}
+        try:
+            validate_safe_python_code(code)
+        except SecurityViolationError as e:
+            return {"text": f"Error: {str(e)} Execution blocked for security.", "data": None}
                 
         # --- 3. Execution Engine (Unchanged) ---
         local_env = {
