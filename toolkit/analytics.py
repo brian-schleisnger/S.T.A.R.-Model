@@ -1023,10 +1023,26 @@ def run_optimization_tool(
         
         if res.success:
             result_text = f"Optimization Successful!\nOptimal Objective Value: {res.fun:.4f}\nOptimal Variables: {res.x}"
-        else:
-            result_text = f"Optimization Failed: {res.message}"
             
-        return {"text": result_text, "data": None, "model": res}
+            # 1. Build a structured DataFrame for Excel export
+            df_results = pd.DataFrame({
+                "Variable": [f"Variable_{i+1}" for i in range(len(res.x))],
+                "Coefficient": objective_coefficients,
+                "Optimal_Value": res.x,
+                "Total_Contribution": np.array(objective_coefficients) * res.x
+            })
+            
+            # 2. Append an overall total summary row at the bottom
+            summary_row = pd.DataFrame([{
+                "Variable": "TOTAL / OPTIMAL OBJECTIVE",
+                "Coefficient": None,
+                "Optimal_Value": res.x.sum(),
+                "Total_Contribution": res.fun
+            }])
+            df_results = pd.concat([df_results, summary_row], ignore_index=True)
+            
+            # 3. Return the DataFrame in the "data" key instead of None
+            return {"text": result_text, "data": df_results, "model": res}
         
     except Exception as e:
         return {"text": f"Optimization Error: {str(e)}", "data": None, "model": None}
