@@ -157,7 +157,10 @@ def execute_sql_query_tool(sql_query: str) -> dict:
         return {"text": f"Success. Showing top 100 rows:\n{csv_text}", "data": df}
         
     except Exception as e:
-        return {"text": f"Error executing SQL: {str(e)}", "data": None}
+        error_msg = str(e)
+        if "does not exist" in error_msg.lower() or "missingcolumn" in error_msg.lower():
+             return {"text": f"Error executing SQL: {error_msg}\n\nSYSTEM HINT: Do not query information_schema. Look at the JSON schema in your system prompt for the correct exact column names (e.g., Activation_Year instead of Year).", "data": None}
+        return {"text": f"Error executing SQL: {error_msg}", "data": None}
     
 
 @mlflow.trace(name="run_ols_regression_tool")

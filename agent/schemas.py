@@ -34,7 +34,7 @@ class SubQuestion(BaseModel):
             "Trigger words: 'CPA', 'cost per acquisition', 'CLV', 'lifetime value', 'unit economics', 'marketing efficiency'.\n\n"
 
             "• STATISTICAL_MODELING — linear relationships, impact analysis, or dimensionality/segmentation work. "
-            "Use when the user asks for: OLS/linear regression, correlation analysis, "
+            "Use when the user asks for: OLS/linear regression, correlation analysis, mutual information / information, "
             "PCA / principal components, or K-Means / customer segmentation / clustering.\n\n"
 
             "• ML_MODELING — non-linear predictive modeling or optimization. "
@@ -177,6 +177,7 @@ class execute_sql_query_tool(BaseModel):
     You MUST filter by "Metric" and/or "Row_Type" BEFORE or WITHIN any join to avoid row multiplication. 
     For example: JOIN ... ON year/month AND "subcount_data_synced"."Metric" = 'Ending Period Subscribers'.
     Never join this table without a Metric or Row_Type filter in the ON or WHERE clause.
+    if you get a 'column does not exist' error, make sure to go back and re-read the data dictionary JSON schema before rewriting your query.
     """
     sql_query: str = Field(
         ..., 
