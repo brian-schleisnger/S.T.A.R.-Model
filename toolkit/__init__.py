@@ -64,7 +64,8 @@ from agent.schemas import (
     run_scenario_planning_tool as run_scenario_planning_tool_Schema,
     execute_python_tool as execute_python_tool_Schema,
     run_neural_network_tool as run_neural_network_tool_Schema,
-    run_optimization_tool as run_optimization_tool_Schema
+    run_optimization_tool as run_optimization_tool_Schema,
+    calculate_mutual_information_tool as calculate_mutual_information_tool_schema
 )
 
 # 2. Import actual tool execution functions explicitly
@@ -80,7 +81,8 @@ from .analytics import (
     run_scenario_planning_tool,
     execute_python_tool,
     run_neural_network_tool,
-    run_optimization_tool
+    run_optimization_tool,
+    calculate_mutual_information_tool
 )
 from .visuals import (
     generate_scatterplot_tool,
@@ -106,7 +108,8 @@ TOOL_SCHEMAS = [
     run_scenario_planning_tool_Schema,
     execute_python_tool_Schema,
     run_neural_network_tool_Schema,
-    run_optimization_tool_Schema
+    run_optimization_tool_Schema,
+    calculate_mutual_information_tool_schema
 ]
 
 TOOLS = [_flatten_tool(pydantic_function_tool(schema)) for schema in TOOL_SCHEMAS]
@@ -128,6 +131,7 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
         "run_ols_regression_tool",
         "run_pca_tool",
         "run_kmeans_clustering_tool",
+        "calculate_mutual_information_tool"
     ],
     "ML_MODELING": [
         "run_random_forest_tool",
@@ -168,5 +172,6 @@ TOOL_DISPATCHER = {
     "run_scenario_planning_tool": (run_scenario_planning_tool, run_scenario_planning_tool_Schema),
     "execute_python_tool": (execute_python_tool, execute_python_tool_Schema),
     "run_neural_network_tool": (run_neural_network_tool, run_neural_network_tool_Schema),
-    "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema)
+    "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema),
+    "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema)
 }

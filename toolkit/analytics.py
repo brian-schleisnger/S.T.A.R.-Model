@@ -12,6 +12,7 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
 from scipy.optimize import linprog
 from sklearn.metrics import (
     accuracy_score,
@@ -1112,3 +1113,104 @@ def execute_python_tool(
         
     except Exception as e:
         return {"text": f"Python Execution Error: {e}", "data": None}
+
+
+@mlflow.trace(name="calculate_mutual_information_tool")
+def calculate_mutual_information_tool(
+    target_variable: str, 
+    feature_variables: list, 
+    TABLE_NAME: Optional[Union[str, List[str]]] = None,
+    dataframe_id: Optional[str] = None,
+    target_type: str = "continuous", 
+    df_memory: DataFrameMemory = None
+) -> Dict[str, Any]:
+    """
+    Calculates Shannon Mutual Information between a target variable and multiple features.
+    Returns the mutual information scores (in nats) for each feature.
+    """
+    columns_to_fetch = [target_variable] + feature_variables
+
+    try:
+        # ── 1. Data Loading ──────────────────────────────────────────────
+        if dataframe_id:
+            df = df_memory.get_df(dataframe_id) if df_memory else None
+            if df is None:
+                return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None}
+        elif TABLE_NAME:
+            df = link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=100000)
+        else:
+            return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
+
+        # ── 2. Column Validation & Cleaning ──────────────────────────────
+        missing = [c for c in columns_to_fetch if c not in df.columns]
+        if missing:
+            return {
+                "text": f"Error: The following columns were not found in the data: {missing}. "
+                        f"Available columns: {df.columns.tolist()}",
+                "data": None
+            }
+
+        df = df[columns_to_fetch].copy()
+
+        # ── 3. Target Preparation ────────────────────────────────────────
+        task = target_type.lower()
+        if task == "continuous":
+            df[target_variable] = pd.to_numeric(df[target_variable], errors="coerce")
+        else:
+            df[target_variable] = df[target_variable].astype(str)
+
+        df = df.dropna(subset=[target_variable])
+
+        # ── 4. Feature Encoding (Matches Random Forest logic) ────────────
+        categorical_features = [
+            col for col in feature_variables
+            if col in df.columns and df[col].dtype == "object"
+        ]
+        numeric_features = [
+            col for col in feature_variables
+            if col in df.columns and col not in categorical_features
+        ]
+
+        for col in numeric_features:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        if categorical_features:
+            df = pd.get_dummies(df, columns=categorical_features, drop_first=True)
+
+        current_features = [col for col in df.columns if col != target_variable]
+        df = df.dropna(subset=[target_variable] + current_features)
+
+        if len(df) < 10:
+            return {"text": "Error: Data size too small after cleaning to calculate reliable mutual information.", "data": None}
+
+        # ── 5. Calculate Mutual Information ──────────────────────────────
+        X = df[current_features]
+        y = df[target_variable]
+
+        if task == "continuous":
+            mi_scores = mutual_info_regression(X, y, random_state=42)
+        else:
+            mi_scores = mutual_info_classif(X, y, random_state=42)
+
+        # ── 6. Format Outputs ────────────────────────────────────────────
+        mi_results = sorted(
+            zip(current_features, mi_scores),
+            key=lambda x: x[1],
+            reverse=True
+        )
+        
+        result_text = f"Mutual Information Analysis ({target_type.capitalize()} Target: '{target_variable}'):\n"
+        result_text += f"Calculated using Shannon information theory on {len(df):,} observations.\n"
+        result_text += "Higher values indicate stronger dependency (measured in nats).\n\n"
+        
+        result_text += "Feature Information Scores:\n"
+        for feat, score in mi_results:
+            result_text += f"  • {feat}: {score:.4f}\n"
+
+        # Provide a tabular version of the results for Excel export memory
+        results_df = pd.DataFrame(mi_results, columns=["Feature", "Mutual_Information_Score"])
+
+        return {"text": result_text, "data": results_df}
+
+    except Exception as e:
+        return {"text": f"Mutual Information Error: {e}", "data": None}

@@ -482,6 +482,36 @@ class run_scenario_planning_tool(BaseModel):
     )
 
 
+class calculate_mutual_information_tool(BaseModel):
+    """
+    Calculates the mutual information (from Shannon information theory) between a target variable and one or more feature variables.
+    Use this to determine how much information the features provide about the target variable, capturing both linear and non-linear dependencies.
+    """
+    TABLE_NAME: Optional[Union[str, List[str]]] = Field(
+        ..., 
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+    )
+
+    dataframe_id: Optional[str] = Field(
+        default=None,
+        description="The ID of a dataset saved to memory in a previous step (e.g., 'df_a1b2c3'). Use this INSTEAD of TABLE_NAME if the data was already queried, cleaned, or aggregated."
+    )
+    
+    target_variable: str = Field(
+        ..., 
+        description="The exact column name of the target variable."
+    )
+    
+    feature_variables: List[str] = Field(
+        ..., 
+        description="A list of exact column names for the feature variables to evaluate against the target."
+    )
+    
+    target_type: Literal["continuous", "discrete"] = Field(
+        default="continuous", 
+        description="Specify 'continuous' if the target variable is numerical (e.g., spend, MRR), or 'discrete' if it is categorical (e.g., churned yes/no, segment)."
+    )
+
 
 #----------------------------VISUALS SCHEMAS----------------------------
 
