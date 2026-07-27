@@ -290,7 +290,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
     with mlflow.start_run(run_name="Agent_Interaction"):
         mlflow.log_param("user_prompt", user_prompt)
         
-        # ─── 0. SEMANTIC CACHE INTERCEPT ───
+        # ─── 1. SEMANTIC CACHE INTERCEPT ───
         t0 = time.perf_counter()
         cached_result = agent_cache.check_cache(user_prompt)
         step_latencies["Cache Check"] = round(time.perf_counter() - t0, 2)
