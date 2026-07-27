@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 AVAILABLE_MODELS: dict[str, str] = {
     "GPT 5.4 Nano (Low)": "system.ai.gpt-5-4-nano",
     "Gemini Flash Lite (Low-Medium)": "system.ai.gemini-3-1-flash-lite",
-    "GPT 5.6 Luna (Medium)": "system.ai.gpt-5-6-luna",
+    "Gemini Flash (Medium)": "system.ai.gemini-3-5-flash",
     "Claude Sonet (Medium-High)": "system.ai.claude-sonnet-5",
     "Claude Opus (High)": "system.ai.claude-opus-4-8"
 }
