@@ -1127,7 +1127,8 @@ def calculate_mutual_information_tool(
 ) -> Dict[str, Any]:
     """
     Calculates Shannon Mutual Information between a target variable and multiple features.
-    Returns the mutual information scores (in nats) for each feature.
+    Automatically handles categorical variables using ordinal encoding, preventing the 
+    dilution of information scores that occurs with one-hot encoding.
     """
     columns_to_fetch = [target_variable] + feature_variables
 
@@ -1162,23 +1163,23 @@ def calculate_mutual_information_tool(
 
         df = df.dropna(subset=[target_variable])
 
-        # ── 4. Feature Encoding (Matches Random Forest logic) ────────────
-        categorical_features = [
-            col for col in feature_variables
-            if col in df.columns and df[col].dtype == "object"
-        ]
-        numeric_features = [
-            col for col in feature_variables
-            if col in df.columns and col not in categorical_features
-        ]
+        # ── 4. Feature Encoding (Ordinal for MI) ─────────────────────────
+        current_features = [col for col in feature_variables if col in df.columns]
+        
+        # Track which features are categorical so sklearn processes them correctly
+        discrete_mask = []
+        
+        for col in current_features:
+            if df[col].dtype == "object" or str(df[col].dtype) == "category":
+                # Automatically map strings to arbitrary integers (e.g., 0, 1, 2)
+                df[col] = df[col].astype('category').cat.codes
+                # Any NaN strings become -1, which is treated as its own discrete bucket
+                discrete_mask.append(True)
+            else:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+                discrete_mask.append(False)
 
-        for col in numeric_features:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        if categorical_features:
-            df = pd.get_dummies(df, columns=categorical_features, drop_first=True)
-
-        current_features = [col for col in df.columns if col != target_variable]
+        # Drop rows where numeric features are missing
         df = df.dropna(subset=[target_variable] + current_features)
 
         if len(df) < 10:
@@ -1189,9 +1190,9 @@ def calculate_mutual_information_tool(
         y = df[target_variable]
 
         if task == "continuous":
-            mi_scores = mutual_info_regression(X, y, random_state=42)
+            mi_scores = mutual_info_regression(X, y, discrete_features=discrete_mask, random_state=42)
         else:
-            mi_scores = mutual_info_classif(X, y, random_state=42)
+            mi_scores = mutual_info_classif(X, y, discrete_features=discrete_mask, random_state=42)
 
         # ── 6. Format Outputs ────────────────────────────────────────────
         mi_results = sorted(
@@ -1208,7 +1209,6 @@ def calculate_mutual_information_tool(
         for feat, score in mi_results:
             result_text += f"  • {feat}: {score:.4f}\n"
 
-        # Provide a tabular version of the results for Excel export memory
         results_df = pd.DataFrame(mi_results, columns=["Feature", "Mutual_Information_Score"])
 
         return {"text": result_text, "data": results_df}
