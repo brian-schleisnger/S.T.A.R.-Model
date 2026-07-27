@@ -34,11 +34,13 @@ AVAILABLE_MODELS: dict[str, str] = {
 }
 
 #the cost in dbus per 1 million tokens. ex: gpt5.4 nano costs 2.857 dbus per 1 million input tokens, and 17.857 dbus per 1 million output tokens
+#pulled fom databrick's model endpoints page
 MODEL_DBUS = pd.DataFrame({"Model": ["system.ai.gpt-5-4-nano","system.ai.gemini-3-1-flash-lite","system.ai.gemini-3-5-flash","system.ai.claude-sonnet-5","system.ai.claude-opus-4-8"],
                            "inputs": [2.857,6.428,21.2485,28.5714,71.429],
                            "Outputs": [17.857,38.572,128.571,142.857,357.143]})
 
 #databricks AI's are estimated to cost about 7 cents per dbu
+#this is online and just an estimate
 DBU_COST = .07
 
 def calculate_cost(model_endpoint: str, input_tokens: int, output_tokens: int) -> float:
