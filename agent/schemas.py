@@ -141,7 +141,7 @@ class execute_python_tool(BaseModel):
       (e.g. df[0] = first table, df[1] = second table). Each table is loaded independently —
       NO pre-join is performed. Use pandas (pd.merge) to join them yourself inside the code.
 
-    The code also has access to numpy (np).
+    The code is executed with access to pandas (pd) and numpy (np).
     To return data to the LLM, assign the final text output to 'result_text' and any resulting DataFrame to 'result_df'.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
@@ -156,7 +156,13 @@ class execute_python_tool(BaseModel):
     
     code: str = Field(
         ..., 
-        description="The Python code to execute. Must be valid Python. Do NOT import os, sys, subprocess, requests, or database drivers. Use the pre-loaded 'df' variable."
+        description=(
+            "The Python code to execute. Must be valid Python. "
+            "Only use the pre-loaded pandas (pd) and numpy (np) libraries. "
+            "Do NOT import outside libraries like os, sys, subprocess, requests, or database drivers. "
+            "Do NOT attempt to run SQL mutation commands. "
+            "Use the pre-loaded 'df' variable."
+        )
     )
 
 class execute_sql_query_tool(BaseModel):
