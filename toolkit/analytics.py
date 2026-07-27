@@ -48,7 +48,8 @@ __all__ = [
     "run_scenario_planning_tool",
     "execute_python_tool",
     "run_neural_network_tool",
-    "run_optimization_tool"
+    "run_optimization_tool",
+    "calculate_mutual_information_tool"
 ]
 
 

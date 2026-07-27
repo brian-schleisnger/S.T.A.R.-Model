@@ -348,7 +348,8 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
             UNIT_ECONOMICS         → calculate_unit_economics_tool: CPA, CLV, CLV:CPA ratio, marketing efficiency.
             STATISTICAL_MODELING   → run_ols_regression_tool (linear relationships / impact of X on Y),
                                      run_pca_tool (dimensionality reduction / variance decomposition),
-                                     run_kmeans_clustering_tool (segmentation / natural groupings).
+                                     run_kmeans_clustering_tool (segmentation / natural groupings),
+                                     calcualte_mutual_information_tool (mutual information and information theory).
             ML_MODELING            → run_random_forest_tool (non-linear prediction / feature importance),
                                      run_neural_network_tool (complex non-linear modeling),
                                      run_optimization_tool (budget allocation / linear programming).
