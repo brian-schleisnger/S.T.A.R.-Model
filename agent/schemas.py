@@ -186,17 +186,24 @@ class execute_sql_query_tool(BaseModel):
 
 class run_ols_regression_tool(BaseModel):
     """
-    Performs an Ordinary Least Squares (OLS) multiple regression. cannot perform non-linear regression. 
+    Performs an Ordinary Least Squares (OLS) multiple regression. Cannot perform non-linear regression. 
     Use this when the user asks to analyze the relationship, correlation, or impact of multiple independent numerical variables on a dependent target variable.
+    
+    CRITICAL MULTI-TABLE RULE: If combining tables with multiple rows per month (like marketing spend and subcounts), do NOT use TABLE_NAME. Instead, use execute_sql_query_tool first to aggregate (SUM) the data by month and filter correctly, then pass the resulting dataframe_id to this tool.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
         ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        description="The exact SQL-safe table name(s) to query."
     )
 
     dataframe_id: Optional[str] = Field(
         default=None,
         description="The ID of a dataset saved to memory in a previous step (e.g., 'df_a1b2c3'). Use this INSTEAD of TABLE_NAME if the data was already queried, cleaned, or aggregated."
+    )
+    
+    where_clause: Optional[str] = Field(
+        default=None,
+        description="Optional PostgreSQL WHERE clause to filter the data before running the regression (e.g., '\"Metric\" = ''Gross Adds'''). Exclude the 'WHERE' keyword."
     )
     
     dependent_variable: str = Field(

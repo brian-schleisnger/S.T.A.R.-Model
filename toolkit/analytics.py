@@ -169,13 +169,12 @@ def run_ols_regression_tool(
     independent_variables: list,
     TABLE_NAME: Optional[Union[str, List[str]]] = None,
     dataframe_id: Optional[str] = None,
+    where_clause: Optional[str] = None,  # <-- ADD THIS
     df_memory: DataFrameMemory = None
 ) -> dict:
     """
     Fits an OLS multiple regression model using statsmodels and returns the full
     summary table as text plus the fitted model object.
-    Accepts data either from a live table query (TABLE_NAME) or a pre-fetched
-    DataFrame stored in memory (dataframe_id).
     """
     columns_to_fetch = [dependent_variable] + independent_variables
     
@@ -185,7 +184,8 @@ def run_ols_regression_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None}
         elif TABLE_NAME:
-            df = link_tables(TABLE_NAME, columns=columns_to_fetch, limit=100000)
+            # <-- PASS IT TO LINK_TABLES HERE
+            df = link_tables(TABLE_NAME, columns=columns_to_fetch, where_clause=where_clause, limit=100000) 
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
             
@@ -1088,8 +1088,10 @@ def execute_python_tool(
         except SecurityViolationError as e:
             return {"text": f"Error: {str(e)} Execution blocked for security.", "data": None}
                 
-        # --- 3. Execution Engine (Unchanged) ---
-        local_env = {
+        # --- 3. Execution Engine ---
+        # Add __builtins__ directly to your environment dictionary
+        execution_env = {
+            '__builtins__': __builtins__,
             'df': df.copy() if isinstance(df, pd.DataFrame) else df,
             'pd': pd,
             'np': np,
@@ -1099,7 +1101,8 @@ def execute_python_tool(
         
         stdout_buffer = io.StringIO()
         with contextlib.redirect_stdout(stdout_buffer):
-            exec(code, {"__builtins__": __builtins__}, local_env)
+            # Pass the dictionary once; it acts as both globals and locals
+            exec(code, execution_env)
             
         output = stdout_buffer.getvalue()
         
@@ -1107,12 +1110,13 @@ def execute_python_tool(
         if output:
             final_text += f"Console Output:\n{output}\n"
             
-        if local_env.get('result_text'):
-            final_text += f"Model Result Text:\n{local_env['result_text']}\n"
+        # Make sure to retrieve your results from the new execution_env dictionary
+        if execution_env.get('result_text'):
+            final_text += f"Model Result Text:\n{execution_env['result_text']}\n"
             
         return {
             "text": final_text, 
-            "data": local_env.get('result_df') if isinstance(local_env.get('result_df'), pd.DataFrame) else (local_env.get('df') if isinstance(local_env.get('df'), pd.DataFrame) else None)
+            "data": execution_env.get('result_df') if isinstance(execution_env.get('result_df'), pd.DataFrame) else (execution_env.get('df') if isinstance(execution_env.get('df'), pd.DataFrame) else None)
         }
         
     except Exception as e:
