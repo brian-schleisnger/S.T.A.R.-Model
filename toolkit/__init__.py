@@ -66,31 +66,35 @@ from agent.schemas import (
     run_neural_network_tool as run_neural_network_tool_Schema,
     run_optimization_tool as run_optimization_tool_Schema,
     calculate_mutual_information_tool as calculate_mutual_information_tool_schema,
-    join_dataframes_tool as join_dataframes_tool_schema
+    join_dataframes_tool as join_dataframes_tool_schema,
+    pivot_dataframe_tool as pivot_dataframe_tool_schema
 )
 
-# 2. Import actual tool execution functions explicitly
-from .analytics import (
+# Import execution functions from their dedicated domain modules
+from .transformations import (
     execute_sql_query_tool,
+    calculate_unit_economics_tool,
+    calculate_ratio_tool,
+    join_dataframes_tool,
+    pivot_dataframe_tool,
+    execute_python_tool,
+)
+from .analytics import (
     run_ols_regression_tool,
     run_forecasting_tool,
     run_random_forest_tool,
     run_pca_tool,
     run_kmeans_clustering_tool,
-    calculate_unit_economics_tool,
-    calculate_ratio_tool,
     run_scenario_planning_tool,
-    execute_python_tool,
     run_neural_network_tool,
     run_optimization_tool,
     calculate_mutual_information_tool,
-    join_dataframes_tool
 )
 from .visuals import (
     generate_scatterplot_tool,
     generate_barchart_tool,
     generate_histogram_tool,
-    generate_linechart_tool
+    generate_linechart_tool,
 )
 
 # 3. Auto-generate OpenAI tool definitions directly from Pydantic schemas
@@ -112,7 +116,8 @@ TOOL_SCHEMAS = [
     run_neural_network_tool_Schema,
     run_optimization_tool_Schema,
     calculate_mutual_information_tool_schema,
-    join_dataframes_tool_schema
+    join_dataframes_tool_schema,
+    pivot_dataframe_tool_schema
 ]
 
 TOOLS = [_flatten_tool(pydantic_function_tool(schema)) for schema in TOOL_SCHEMAS]
@@ -157,8 +162,9 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
         "execute_python_tool",
     ],
     "DATA_TRANSFORMATION": [
-    "join_dataframes_tool"
-],
+        "join_dataframes_tool",
+        "pivot_dataframe_tool"
+    ],
 }
 
 # 4. Centralized routing map: maps tool names to (execution_function, pydantic_validator) tuples
@@ -181,4 +187,5 @@ TOOL_DISPATCHER = {
     "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema),
     "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema),
     "join_dataframes_tool": (join_dataframes_tool, join_dataframes_tool_schema),
+    "pivot_dataframe_tool": (join_dataframes_tool,join_dataframes_tool_schema)
 }

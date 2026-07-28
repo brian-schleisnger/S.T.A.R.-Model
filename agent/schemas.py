@@ -57,7 +57,7 @@ class SubQuestion(BaseModel):
             "• CUSTOM_PYTHON — complex multi-step analytics that combine multiple tables or operations "
             "and cannot be satisfied by any single dedicated tool above. Use as a last resort."
 
-            "• DATA_TRANSFORMATION — use this when the user asks to combine, join, or merge data from two different sources that must be queried separately first."
+            "• DATA_TRANSFORMATION — use this when the user asks to pivot, combine, join, or merge data from two different sources that must be queried separately first."
         )
     )
 
@@ -95,6 +95,31 @@ class join_dataframes_tool(BaseModel):
         description="A list of exact column names from the right DataFrame to join on."
     )
 
+class pivot_dataframe_tool(BaseModel):
+    """
+    Reshapes an in-memory DataFrame from long format to wide format using pandas pivot_table.
+    Use this when long-format metrics (like subcount or P&L rows) need to become columns side-by-side.
+    """
+    dataframe_id: str = Field(
+        ..., 
+        description="The ID of the dataset saved in memory (e.g., 'df_a1b2c3')."
+    )
+    index_columns: List[str] = Field(
+        ..., 
+        description="Column name(s) to use as the row headers (e.g., ['Year', 'Month'])."
+    )
+    pivot_column: str = Field(
+        ..., 
+        description="The column whose unique values will become the new table headers (e.g., 'Metric')."
+    )
+    value_column: str = Field(
+        ..., 
+        description="The numerical column providing values for the new table cells (e.g., 'Amount')."
+    )
+    aggregation: Literal["SUM", "AVG", "COUNT", "MAX", "MIN"] = Field(
+        default="SUM",
+        description="How to aggregate duplicate entries if multiple rows share index/pivot keys. Default is SUM."
+    )
 
 class run_neural_network_tool(BaseModel):
     """

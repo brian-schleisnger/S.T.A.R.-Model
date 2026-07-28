@@ -374,6 +374,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
                                      compare_monthly_metrics_tool (monthly spend vs acquisition side-by-side).
             CUSTOM_PYTHON          → execute_python_tool: multi-step or cross-table analysis no single tool can handle.
             DATA_TRANSFORMATION    → join_dataframes_tool: merges two previously saved dataframes together on specific columns.
+                                     pivot_dataframe_tool: reshapre long-form tables into wide side by side format
 
             DATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as
             dataframe_id instead of re-querying the database.
