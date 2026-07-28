@@ -458,32 +458,37 @@ class calculate_unit_economics_tool(BaseModel):
 
 class calculate_ratio_tool(BaseModel):
     """
-    Calculates a monthly ratio between any two numeric columns across one or two tables.
+    Calculates a monthly ratio between any two numeric columns across one or two tables or saved dataframes.
     Returns a DataFrame with year, month, the two source values, and the computed ratio
     (numerator / denominator) for every period where both values are present.
-    Use this whenever the user asks for a rate, ratio, efficiency, or relative comparison
-    between two metrics over time — e.g. 'spend per subscriber', 'activations per sales call',
-    'revenue per activation', 'CPA by channel'.
     """
     numerator_column: str = Field(
         ...,
         description="The exact column name to use as the numerator of the ratio (e.g., 'Total_Spend')."
     )
-    numerator_table: str = Field(
-        ...,
-        description="The exact SQL-safe table name containing the numerator column (e.g., '\"sandbox\".\"dbs_marketing_sync\"')."
+    numerator_table: Optional[str] = Field(
+        default=None,
+        description="The exact SQL-safe table name containing the numerator column (e.g., '\"sandbox\".\"dbs_marketing_sync\"'). Use this if pulling directly from the database."
+    )
+    numerator_dataframe_id: Optional[str] = Field(
+        default=None,
+        description="The ID of a dataset saved to memory in a previous step containing the numerator (e.g., 'df_a1b2c3'). Use this INSTEAD of numerator_table if data is already in memory."
     )
     denominator_column: str = Field(
         ...,
         description="The exact column name to use as the denominator of the ratio (e.g., 'Activations')."
     )
-    denominator_table: str = Field(
-        ...,
-        description="The exact SQL-safe table name containing the denominator column. May be the same as numerator_table."
+    denominator_table: Optional[str] = Field(
+        default=None,
+        description="The exact SQL-safe table name containing the denominator column."
+    )
+    denominator_dataframe_id: Optional[str] = Field(
+        default=None,
+        description="The ID of a dataset saved to memory containing the denominator."
     )
     where_clause: Optional[str] = Field(
         default=None,
-        description="Optional. A PostgreSQL WHERE clause applied when fetching both columns (e.g., '\"year\" = 2024'). Exclude the 'WHERE' keyword."
+        description="Optional. A PostgreSQL WHERE clause applied when fetching columns from a database (e.g., '\"year\" = 2024'). Exclude the 'WHERE' keyword."
     )
     numerator_aggregation: Optional[str] = Field(
         default="SUM",

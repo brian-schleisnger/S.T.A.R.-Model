@@ -306,120 +306,93 @@ def calculate_unit_economics_tool(marketing_where_clause: str = None, subscriber
 @mlflow.trace(name="calculate_ratio_tool")
 def calculate_ratio_tool(
     numerator_column: str,
-    numerator_table: str,
     denominator_column: str,
-    denominator_table: str,
+    numerator_table: str = None,
+    numerator_dataframe_id: str = None,
+    denominator_table: str = None,
+    denominator_dataframe_id: str = None,
     where_clause: str = None,
     numerator_aggregation: str = "SUM",
     denominator_aggregation: str = "SUM",
+    df_memory: DataFrameMemory = None
 ) -> dict:
-    """
-    Calculates a monthly ratio (numerator / denominator) between any two numeric columns,
-    which may live in the same table or in two different tables.
+    
+    VALID_AGGS = {"SUM": "sum", "AVG": "mean", "COUNT": "count"}
+    num_agg_sql = numerator_aggregation.upper() if numerator_aggregation.upper() in VALID_AGGS else "SUM"
+    den_agg_sql = denominator_aggregation.upper() if denominator_aggregation.upper() in VALID_AGGS else "SUM"
+    
+    num_agg_pd = VALID_AGGS.get(num_agg_sql, "sum")
+    den_agg_pd = VALID_AGGS.get(den_agg_sql, "sum")
 
-    Both sides are independently aggregated to one value per (year, month) period using
-    their respective aggregation functions, then joined on the shared time dimensions.
-    Returns a DataFrame with columns: year, month, <numerator_column>, <denominator_column>,
-    and ratio_<numerator_column>_per_<denominator_column>.
-    """
-    VALID_AGGS = {"SUM", "AVG", "COUNT"}
-    num_agg = numerator_aggregation.upper() if numerator_aggregation.upper() in VALID_AGGS else "SUM"
-    den_agg = denominator_aggregation.upper() if denominator_aggregation.upper() in VALID_AGGS else "SUM"
-
-    try:
-        same_table = numerator_table.strip() == denominator_table.strip()
-
-        if same_table:
-            # Both columns live in the same table — fetch in a single query.
-            dims = TABLE_DIMENSIONS.get(numerator_table.strip())
-            if dims is None:
-                return {"text": f"Error: Table '{numerator_table}' not found in TABLE_DIMENSIONS.", "data": None}
-
-            year_col = dims["year"]
-            month_col = dims["month"]
-
+    def _fetch_side(table_name, df_id, col_name, sql_agg, pd_agg):
+        if df_id:
+            if not df_memory:
+                raise ValueError("df_memory is not initialized.")
+            df = df_memory.get_df(df_id)
+            if df is None:
+                raise ValueError(f"DataFrame '{df_id}' not found in memory.")
+            
+            # Detect year/month columns across known standard names
+            known_year_cols = {dims["year"] for dims in TABLE_DIMENSIONS.values()} | {"year", "Year"}
+            known_month_cols = {dims["month"] for dims in TABLE_DIMENSIONS.values()} | {"month", "Month"}
+            
+            year_col = next((c for c in known_year_cols if c in df.columns), None)
+            month_col = next((c for c in known_month_cols if c in df.columns), None)
+            
+            if not (year_col and month_col and col_name in df.columns):
+                raise ValueError(f"Missing year/month dimensions or column '{col_name}' in DataFrame '{df_id}'.")
+                
+            # Perform Pandas GroupBy Aggregation
+            df_agg = df.groupby([year_col, month_col], as_index=False)[col_name].agg(pd_agg)
+            df_agg.rename(columns={year_col: "year", month_col: "month", col_name: "val"}, inplace=True)
+            return df_agg
+            
+        elif table_name:
+            dims = TABLE_DIMENSIONS.get(table_name.strip())
+            if not dims:
+                raise ValueError(f"Table '{table_name}' not found in TABLE_DIMENSIONS.")
+                
+            y_col, m_col = dims["year"], dims["month"]
+            
+            # Perform SQL Pushdown Aggregation
             df = link_tables(
-                tables=numerator_table,
-                columns=[
-                    f'"{year_col}"',
-                    f'"{month_col}"',
-                    f'{num_agg}("{numerator_column}") AS numerator_val',
-                    f'{den_agg}("{denominator_column}") AS denominator_val',
-                ],
+                tables=table_name,
+                columns=[f'"{y_col}"', f'"{m_col}"', f'{sql_agg}("{col_name}") AS val'],
                 where_clause=where_clause,
-                group_by=[year_col, month_col],
-                order_by=f'"{year_col}" ASC, "{month_col}" ASC',
+                group_by=[y_col, m_col],
+                order_by=f'"{y_col}" ASC, "{m_col}" ASC',
                 limit=None,
             )
             df.columns = [c.replace('"', '') for c in df.columns]
-            df.rename(columns={year_col: "year", month_col: "month"}, inplace=True)
-
+            df.rename(columns={y_col: "year", m_col: "month"}, inplace=True)
+            return df
+            
         else:
-            # Two different tables — query each independently then join on year/month.
-            num_dims = TABLE_DIMENSIONS.get(numerator_table.strip())
-            den_dims = TABLE_DIMENSIONS.get(denominator_table.strip())
+            raise ValueError(f"Must provide either a TABLE_NAME or dataframe_id for column '{col_name}'.")
 
-            if num_dims is None:
-                return {"text": f"Error: Table '{numerator_table}' not found in TABLE_DIMENSIONS.", "data": None}
-            if den_dims is None:
-                return {"text": f"Error: Table '{denominator_table}' not found in TABLE_DIMENSIONS.", "data": None}
+    try:
+        # Fetch and aggregate each side independently 
+        df_num = _fetch_side(numerator_table, numerator_dataframe_id, numerator_column, num_agg_sql, num_agg_pd)
+        df_den = _fetch_side(denominator_table, denominator_dataframe_id, denominator_column, den_agg_sql, den_agg_pd)
 
-            num_year, num_month = num_dims["year"], num_dims["month"]
-            den_year, den_month = den_dims["year"], den_dims["month"]
+        # Standardize join keys
+        for df_tmp in [df_num, df_den]:
+            df_tmp["year"] = pd.to_numeric(df_tmp["year"], errors="coerce")
+            df_tmp["month"] = pd.to_numeric(df_tmp["month"], errors="coerce")
 
-            df_num = link_tables(
-                tables=numerator_table,
-                columns=[
-                    f'"{num_year}"',
-                    f'"{num_month}"',
-                    f'{num_agg}("{numerator_column}") AS numerator_val',
-                ],
-                where_clause=where_clause,
-                group_by=[num_year, num_month],
-                order_by=f'"{num_year}" ASC, "{num_month}" ASC',
-                limit=None,
-            )
-            df_num.columns = [c.replace('"', '') for c in df_num.columns]
-            df_num.rename(columns={num_year: "year", num_month: "month"}, inplace=True)
-
-            df_den = link_tables(
-                tables=denominator_table,
-                columns=[
-                    f'"{den_year}"',
-                    f'"{den_month}"',
-                    f'{den_agg}("{denominator_column}") AS denominator_val',
-                ],
-                where_clause=where_clause,
-                group_by=[den_year, den_month],
-                order_by=f'"{den_year}" ASC, "{den_month}" ASC',
-                limit=None,
-            )
-            df_den.columns = [c.replace('"', '') for c in df_den.columns]
-            df_den.rename(columns={den_year: "year", den_month: "month"}, inplace=True)
-
-            for df_tmp in [df_num, df_den]:
-                df_tmp["year"] = pd.to_numeric(df_tmp["year"], errors="coerce")
-                df_tmp["month"] = pd.to_numeric(df_tmp["month"], errors="coerce")
-
-            df = pd.merge(df_num, df_den, on=["year", "month"], how="inner")
+        # Inner join on time dimensions
+        df = pd.merge(df_num, df_den, on=["year", "month"], how="inner", suffixes=('_num', '_den'))
 
         if df.empty:
-            return {"text": "Error: No overlapping year/month periods found for the two columns.", "data": None}
+            return {"text": "Error: No overlapping year/month periods found between the datasets.", "data": None}
 
-        df["year"] = pd.to_numeric(df["year"], errors="coerce")
-        df["month"] = pd.to_numeric(df["month"], errors="coerce")
-        df["numerator_val"] = pd.to_numeric(df["numerator_val"], errors="coerce")
-        df["denominator_val"] = pd.to_numeric(df["denominator_val"], errors="coerce")
-
+        # Calculate the ratio
         ratio_col = f"ratio_{numerator_column}_per_{denominator_column}"
-        df[ratio_col] = df["numerator_val"] / df["denominator_val"]
+        df[ratio_col] = df["val_num"] / df["val_den"]
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
-        df.rename(columns={
-            "numerator_val": numerator_column,
-            "denominator_val": denominator_column,
-        }, inplace=True)
-
+        # Clean up column names for output
+        df.rename(columns={"val_num": numerator_column, "val_den": denominator_column}, inplace=True)
         df = df.sort_values(by=["year", "month"]).reset_index(drop=True)
 
         avg_ratio = df[ratio_col].mean()
