@@ -1,3 +1,4 @@
+import concurrent.futures
 import inspect
 import json
 import traceback
@@ -188,6 +189,7 @@ def decompose_question(user_prompt: str,
 def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str], df_memory: Any) -> Tuple[str, bool, List[Any]]:
     """
     Handles parsing, Pydantic validation, and execution of a single tool call.
+    Includes a hard timeout to prevent runaway executions.
     Returns: (output_text, has_error, extracted_data_objects)
     """
     tool_name = tool_call["function"]["name"]
@@ -222,8 +224,18 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         if "df_memory" in inspect.signature(func).parameters:
             clean_args["df_memory"] = df_memory
 
-        result = func(**clean_args)
+        # --- TIMEOUT WRAPPER IMPLEMENTATION ---
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(func, **clean_args)
+            try:
+                # Hard cap of 30 seconds per tool execution
+                result = future.result(timeout=30.0)
+            except concurrent.futures.TimeoutError:
+                error_msg = f"Error: Tool '{tool_name}' timed out after 30 seconds. Execution aborted."
+                run_log.append(error_msg)
+                return error_msg, True, []
         
+        # 3. Handle Results
         if isinstance(result, dict):
             if result.get("status") == "error":
                 output_text = result.get("message", "Tool failed internally.")
@@ -232,7 +244,7 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
             
             output_text = result.get("text", "Tool executed successfully.")
             
-            # --- NEW MEMORY INJECTION ---
+            # --- MEMORY INJECTION ---
             if result.get("data") is not None and isinstance(result["data"], pd.DataFrame):
                 # Save to registry and append the ID to the LLM's view
                 df_id = df_memory.save_df(result["data"])
@@ -399,7 +411,8 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
                 response = raw_client.chat.completions.create(
                     model=ModelConfig.ACTIVE_MODEL,
                     messages=msgs,
-                    tools=active_tools
+                    tools=active_tools,
+                    timeout = 20
                 )
                 track_tokens(response, context)
                 assistant_msg = response.choices[0].message.model_dump(exclude_none=True)
@@ -469,7 +482,8 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
         try:
             response = raw_client.chat.completions.create(
                 model=ModelConfig.ACTIVE_MODEL,
-                messages=final_msgs
+                messages=final_msgs,
+                timeout=20
             )
             track_tokens(response, context)
             final_text = _extract_text_content(response.choices[0].message)
