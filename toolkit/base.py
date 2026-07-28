@@ -102,7 +102,8 @@ def _make_fresh_openai_client() -> OpenAI:
     """
     return OpenAI(
         api_key=get_auth_token(),
-        base_url=DATABRICKS_AI_BASE_URL
+        base_url=DATABRICKS_AI_BASE_URL,
+        max_retries=0
     )
 
 class DynamicOpenAIClient:

@@ -51,7 +51,7 @@
             "name": "Working/NW",
             "description": "An indicator to determine if the spend was 'working dollars' or 'non-working dollars'.",
             "data_type": "String",
-            "range_of_outcomes": "Working or Nopn-Working",
+            "range_of_outcomes": "Working or Non-Working",
             "formula": null
         },
         {

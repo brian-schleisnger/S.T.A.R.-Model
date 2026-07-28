@@ -475,7 +475,8 @@ def run_kmeans_clustering_tool(
 def run_scenario_planning_tool(
     target_variable: str, 
     scenario_changes: list,
-    hold_constant_variables: list,
+    feature_variables: Optional[list] = None,
+    hold_constant_variables: Optional[list] = None,
     TABLE_NAME: Optional[Union[str, List[str]]] = None, 
     dataframe_id: Optional[str] = None,
     where_clause: Optional[str] = None,
@@ -490,6 +491,7 @@ def run_scenario_planning_tool(
     
     Dynamically joins any combination of tables using link_tables and TABLE_DIMENSIONS.
     """
+    hold_constant_variables = hold_constant_variables or feature_variables or []
     # Clean input strings
     target_variable = str(target_variable).replace('"', '').replace("'", "").strip()
     hold_constant_variables = [str(col).replace('"', '').replace("'", "").strip() for col in hold_constant_variables]

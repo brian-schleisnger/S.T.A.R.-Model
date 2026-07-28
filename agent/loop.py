@@ -361,7 +361,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
             STATISTICAL_MODELING   → run_ols_regression_tool (linear relationships / impact of X on Y),
                                      run_pca_tool (dimensionality reduction / variance decomposition),
                                      run_kmeans_clustering_tool (segmentation / natural groupings),
-                                     calcualte_mutual_information_tool (mutual information and information theory).
+                                     calculate_mutual_information_tool (mutual information and information theory).
             ML_MODELING            → run_random_forest_tool (non-linear prediction / feature importance),
                                      run_neural_network_tool (complex non-linear modeling),
                                      run_optimization_tool (budget allocation / linear programming).
@@ -374,7 +374,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
                                      compare_monthly_metrics_tool (monthly spend vs acquisition side-by-side).
             CUSTOM_PYTHON          → execute_python_tool: multi-step or cross-table analysis no single tool can handle.
             DATA_TRANSFORMATION    → join_dataframes_tool: merges two previously saved dataframes together on specific columns.
-                                     pivot_dataframe_tool: reshapre long-form tables into wide side by side format
+                                     pivot_dataframe_tool: reshape long-form tables into wide side by side format
 
             DATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as
             dataframe_id instead of re-querying the database.

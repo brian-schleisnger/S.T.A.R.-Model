@@ -187,5 +187,5 @@ TOOL_DISPATCHER = {
     "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema),
     "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema),
     "join_dataframes_tool": (join_dataframes_tool, join_dataframes_tool_schema),
-    "pivot_dataframe_tool": (join_dataframes_tool,join_dataframes_tool_schema)
+    "pivot_dataframe_tool": (pivot_dataframe_tool,pivot_dataframe_tool_schema)
 }
