@@ -69,7 +69,7 @@
       "name": "Activation_Plan",
       "description": "Activation Plan, or how the customer's contract is set up",
       "data_type": "String",
-      "range_of_outcomes": "DHA Elite(24 month price lock, leased hardware, excellent credit), DHA Plus(24 month contract, leased hardware with upgrade fees, good credit), DHA Standard(24 month contract, activation fee, leased hardware with upgrade fees, standard credit), flex(no contract, high activation fee, purchased hardware, starter credit), flex24(24 month contract, activation fees, leased hardware with upgrade fees, no credit check)",
+      "range_of_outcomes": "DHA_Elite, DHA_Plus, DHA_Standard, flex, flex24, DISH Outdoors, DHA_Old, Unknown",
       "formula": null
     },
     {
