@@ -142,6 +142,52 @@ def link_tables(
     return df
 
 
+@mlflow.trace(name="join_dataframes_tool")
+def join_dataframes_tool(
+    left_dataframe_id: str, 
+    right_dataframe_id: str, 
+    how: str, 
+    left_on: list, 
+    right_on: list, 
+    df_memory: DataFrameMemory = None
+) -> dict:
+    """
+    Merges two in-memory dataframes and returns the resulting dataframe.
+    """
+    try:
+        if not df_memory:
+            return {"text": "Error: df_memory is not initialized.", "data": None}
+            
+        df_left = df_memory.get_df(left_dataframe_id)
+        df_right = df_memory.get_df(right_dataframe_id)
+        
+        if df_left is None:
+            return {"text": f"Error: Left DataFrame '{left_dataframe_id}' not found.", "data": None}
+        if df_right is None:
+            return {"text": f"Error: Right DataFrame '{right_dataframe_id}' not found.", "data": None}
+            
+        # Perform the merge
+        merged_df = pd.merge(
+            df_left, 
+            df_right, 
+            how=how, 
+            left_on=left_on, 
+            right_on=right_on,
+            suffixes=('_left', '_right')
+        )
+        
+        if merged_df.empty:
+            return {"text": "Warning: The join executed successfully but resulted in 0 rows (no overlapping keys).", "data": merged_df}
+            
+        return {
+            "text": f"Successfully joined DataFrames '{left_dataframe_id}' and '{right_dataframe_id}' ({how} join). Resulting shape: {merged_df.shape}.", 
+            "data": merged_df
+        }
+        
+    except Exception as e:
+        return {"text": f"DataFrame Join Error: {str(e)}", "data": None}
+
+
 @mlflow.trace(name="execute_sql_query")
 def execute_sql_query_tool(sql_query: str) -> dict:
     """

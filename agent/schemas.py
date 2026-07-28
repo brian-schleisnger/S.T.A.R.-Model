@@ -19,6 +19,7 @@ class SubQuestion(BaseModel):
         "SCENARIO_SIMULATION",
         "VISUALIZATION",
         "CUSTOM_PYTHON",
+        "DATA_TRANSFORMATION"
     ] = Field(
         ..., 
         description=(
@@ -55,6 +56,8 @@ class SubQuestion(BaseModel):
 
             "• CUSTOM_PYTHON — complex multi-step analytics that combine multiple tables or operations "
             "and cannot be satisfied by any single dedicated tool above. Use as a last resort."
+
+            "• DATA_TRANSFORMATION — use this when the user asks to combine, join, or merge data from two different sources that must be queried separately first."
         )
     )
 
@@ -65,6 +68,33 @@ class DecomposedQuestions(BaseModel):
     )
 
 # -------------------- ANALYSIS SCHEMAS --------------------
+
+class join_dataframes_tool(BaseModel):
+    """
+    Joins (merges) two previously saved in-memory DataFrames together based on shared columns.
+    Use this when you need to combine data from two different tables that you have already queried.
+    """
+    left_dataframe_id: str = Field(
+        ..., 
+        description="The ID of the first (left) dataset saved to memory (e.g., 'df_a1b2c3')."
+    )
+    right_dataframe_id: str = Field(
+        ..., 
+        description="The ID of the second (right) dataset saved to memory."
+    )
+    how: Literal["inner", "left", "right", "outer", "cross"] = Field(
+        default="inner",
+        description="The type of merge to be performed. 'inner' is standard."
+    )
+    left_on: List[str] = Field(
+        ...,
+        description="A list of exact column names from the left DataFrame to join on."
+    )
+    right_on: List[str] = Field(
+        ...,
+        description="A list of exact column names from the right DataFrame to join on."
+    )
+
 
 class run_neural_network_tool(BaseModel):
     """

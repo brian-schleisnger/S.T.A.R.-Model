@@ -65,7 +65,8 @@ from agent.schemas import (
     execute_python_tool as execute_python_tool_Schema,
     run_neural_network_tool as run_neural_network_tool_Schema,
     run_optimization_tool as run_optimization_tool_Schema,
-    calculate_mutual_information_tool as calculate_mutual_information_tool_schema
+    calculate_mutual_information_tool as calculate_mutual_information_tool_schema,
+    join_dataframes_tool as join_dataframes_tool_schema
 )
 
 # 2. Import actual tool execution functions explicitly
@@ -82,7 +83,8 @@ from .analytics import (
     execute_python_tool,
     run_neural_network_tool,
     run_optimization_tool,
-    calculate_mutual_information_tool
+    calculate_mutual_information_tool,
+    join_dataframes_tool
 )
 from .visuals import (
     generate_scatterplot_tool,
@@ -109,7 +111,8 @@ TOOL_SCHEMAS = [
     execute_python_tool_Schema,
     run_neural_network_tool_Schema,
     run_optimization_tool_Schema,
-    calculate_mutual_information_tool_schema
+    calculate_mutual_information_tool_schema,
+    join_dataframes_tool_schema
 ]
 
 TOOLS = [_flatten_tool(pydantic_function_tool(schema)) for schema in TOOL_SCHEMAS]
@@ -153,6 +156,9 @@ CATEGORY_TOOLS: dict[str, list[str]] = {
     "CUSTOM_PYTHON": [
         "execute_python_tool",
     ],
+    "DATA_TRANSFORMATION": [
+    "join_dataframes_tool"
+],
 }
 
 # 4. Centralized routing map: maps tool names to (execution_function, pydantic_validator) tuples
@@ -173,5 +179,6 @@ TOOL_DISPATCHER = {
     "execute_python_tool": (execute_python_tool, execute_python_tool_Schema),
     "run_neural_network_tool": (run_neural_network_tool, run_neural_network_tool_Schema),
     "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema),
-    "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema)
+    "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema),
+    "join_dataframes_tool": (join_dataframes_tool, join_dataframes_tool_schema),
 }
