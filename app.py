@@ -317,7 +317,8 @@ for i, msg in enumerate(st.session_state.messages):
                         with st.expander("🧠 View Agent Execution Trace", expanded=False):
                             for step_num, log in enumerate(msg["run_log"], 1):
                                 st.markdown(f"**Step {step_num}:**")
-                                st.code(log, language="text", wrap_lines=True)
+                                clean_log = log.replace('\\n', '\n')
+                                st.code(clean_log, language="python" if "def " in clean_log or "import pandas" in clean_log else "sql" if "SELECT " in clean_log else "text", wrap_lines=True)
 
                 with act_col3:
                     if i > 0 and st.session_state.messages[i - 1]["role"] == "user":

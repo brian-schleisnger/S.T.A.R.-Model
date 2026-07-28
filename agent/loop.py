@@ -210,7 +210,19 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         run_log.append(error_msg)
         return error_msg, True, []
 
-    run_log.append(f"Attempt {attempt+1}: Agent selected {tool_name} with args: {clean_args}")
+    # Format the log entry nicely for readability
+    log_entry = f"Attempt {attempt+1}: Agent selected {tool_name}"
+    
+    if tool_name == "execute_python_tool" and "code" in clean_args:
+        log_entry += f"\n\nPython Code:\n{clean_args['code']}"
+    elif tool_name == "execute_sql_query_tool" and "sql_query" in clean_args:
+        log_entry += f"\n\nSQL Query:\n{clean_args['sql_query']}"
+    else:
+        # Pretty-print JSON for other tools and unescape any hidden newlines
+        formatted_args = json.dumps(clean_args, indent=2).replace('\\n', '\n')
+        log_entry += f" with args:\n{formatted_args}"
+        
+    run_log.append(log_entry)
     
     # 2. Execute Tool
     if tool_name not in TOOL_DISPATCHER:

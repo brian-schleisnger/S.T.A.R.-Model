@@ -1,6 +1,5 @@
 The things I'm looking to add/update, roughly in the order in which I'm trying to achieve them, knowing I likely won't achieve them all. 
 1. Boost model reliability - make sure when the user asks questions, the output is what the user wants
-2. Ensure the optimization tool is somewhat useful, and not just sitting there
-3. Somehow connect the project to the redshift tables with some kind of service account
+2. Connect the project to actual post-acquisition customer data, either by the redshift tables with some kind of service account or through talking to Kyle/Ryan/Zach's team about connecting to their data.
 4. Make the visualizations better
 5. what-if scenario better

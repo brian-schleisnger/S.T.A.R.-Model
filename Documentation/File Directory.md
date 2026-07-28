@@ -10,11 +10,11 @@
 
 &#x20; **context.py**
 
-&#x09;this is a pretty simple file supporting the inter-turn memory function of the model. It's a separate file because AI said this would make testing easier, and it means there's less tie in if we decide to move away from streamlit as our U.I.
+&#x09;this is a pretty simple file supporting the memory function of the model. it helps store the data retrieved by the llm's calls so that it can be referenced by the model in later questions in this chat string.
 
 &#x20; **loop.py**
 
-&#x09;This is the main file you want to reference if you want ot understand the llm functionality. the main function, run\_agent\_loop, is the model's llm loop from start to finish. it (1) sends the question to cache to check if there was a similar question that was asked; (2) filter's the schema, A.K.A. looks at the question and decides what tables should be referenced (this is before the other questions to save tokens); (3) runs decompose question, a prompt to break one question into multiple as necessary (ex filtering a table is one question, running a regression is a second question); (4) for each of the questions decompose\_question came up with, it selects a tool to use and writes the arguments to go into the tool (column names, table names, etc.); (5) takes the arguments written by the llm and interfaces with either toolkit/analysis.py or toolkit/visuals.py to run the desired function; (6) collects the output from the tool usage and uses an llm to contextualize it; (7) returns all of the data, test, visuals, and tracking metrics to app.py for display.
+&#x09;This is the main file you want to reference if you want to understand the llm functionality. the main function, run\_agent\_loop, is the model's llm loop from start to finish. it (1) sends the question to cache to check if there was a similar question that was asked; (2) filter's the schema, A.K.A. looks at the question and decides what tables should be referenced (this is before the other questions to save tokens); (3) runs decompose question, a prompt to break one question into multiple as necessary (ex filtering a table is one question, running a regression is a second question); (4) for each of the questions decompose\_question came up with, it selects a tool to use and writes the arguments to go into the tool (column names, table names, etc.); (5) takes the arguments written by the llm and interfaces with either toolkit/analysis.py or toolkit/visuals.py to run the desired function; (6) collects the output from the tool usage and uses an llm to contextualize it; (7) returns all of the data, test, visuals, and tracking metrics to app.py for display.
 
 &#x20; **memory.py**
 
@@ -66,25 +66,25 @@
 
 &#x20; **analytics.py**
 
-&#x09;this is the workhorse file with all of the actual statistical/data mining/retrieval stuff. if you want the model to do something it can't right now, chances are you'll put it in here. we have the following functions.
+&#x09;this is the workhorse file with all of the actual statistical/data mining stuff. if you want the model to do something it can't right now, chances are you'll put it in here. we have the following functions.
 
-* link tables function isn't actually something the llm calls, but if the llm tries to access multiple tables, one of the other functions might use this function to link tables together.
-* execute sql query is pretty free-flowing; the llm has pretty much free reign to pull data however it wants, as long as it stays read only.
 * run ols regression is linear regression, probably the most used tool outside of sql querying.
 * run forecasting tool is pretty much waht it sounds like, takes in some historical data and tries to predict what will that data will look like moving forward.
 * random forest tool is a machine learning tool that allows for non-linear regression or classification; it takes in a bunch of data, samples that data a bunch of times, generates a decision tree for each sample that uses some variables to predicat the target variable, and then "averages" out all those decision trees to answer the question "how much do these variables impact this variable really?".
 * pca tool, short for principal component analysis, takes in a bunch of columns and basically simplifies all the columns down to just a few derived columns that don't correlate with each other, it'll return something like "95% of variation in the data is explained by this factor".
 * kmeans clustering takes in abunch of data points and tries to divide them up in the best way possible; it could be useful for identifying data-driven market segments.
-* calculate unit economics is a function built to hous thee most common asks of the user base, right now it calculates marketing cpa, but this will likely be the first thing added on as you get more data of what people are asking a bunch.
-* calculate ratio tool is another what it sounds like: calculates the ratio of two numbers for a given month or set of months.
 * scenario planning tool is the what-if function: takes in a variable that changes, a variable that stays constant, and a variable that you want to measure; if we reduce spend by 10% how will activations be affected?.
 * neural network tool is another machine learning method for non-linear relationships; it takes a long time to run, but is probably the most industry-standard for gaining insights.
-* run optimization is the standard linear programming optimization method; it takes in equations to maximize or minimize, as well as bounds on certain variables, and adjusts the inputs of the function ot get to the best possible value.
-* Execute python tool was created to give the llm freedom to do something outside of the standard toolbox; in my experience testing, though, it rarely if ever tries to call this first time.
+* run optimization is the standard linear programming optimization method; it takes in equations to maximize or minimize, as well as bounds on certain variables, and adjusts the inputs of the function to get to the best possible value.
+* mutual information tool is designed to tell you how much "information" one variable give you about another variable - likely won't run, more for things like feature selection if the ml elements ever get heavier
 
 &#x20; **base.py**
 
 &#x09;this is basically a file designed to house a bunch of random stuff. it's where the model endpoints and selection functions live. it has token tracking functions and the cost function to determine the conversion from tokens to $. it houses the authentication token it uses to access databricks. it handles the llm client: basically wrapping the endpoint in a class for standardization purposes. it has table linking stuff; what columns go together, and what dictionaries go with what. finally, it has the actual raw llm call function that loop accesses, and the direct sql call function that interacts with databricks.
+
+&#x20; **Transformations.py**
+
+&#x09;originally, this and analytics.py were all the same function, but I split them up to ensure not file as too long. this is where a few things live: the sql and python code tools, the data transformation tools that link and pivot dataframes, raio functions (and the custom built cpa function), and the link tables function (which supports queries from multiple databricks tables
 
 &#x20; **Validators.py**
 
@@ -119,7 +119,7 @@
 * sqlalchemy works with pg8000 to manage how we write and run sql queries throughout the model.
 * statsmodels is a dedicated package for regression analysis.
 * streamlit is a user interface library - it works to display all the thing syou see on the webpage.
-* finally, tiktoken works with llmlingua for token compression and memory and things like that.
+* tiktoken works with llmlingua for token compression and memory and things like that.
 
 
 

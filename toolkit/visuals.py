@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from .analytics import link_tables
+from .transformations import link_tables
 from .base import run_sql_query
 from agent.memory import DataFrameMemory
 
