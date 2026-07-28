@@ -76,7 +76,7 @@ Your task:
 - If a question touches revenue, costs, ARPU, OIBDA, or P&L line items → include 'dbspl_sync'.
 - If a question touches subscriber counts, gross/net adds, or churn → include 'subcount_data_synced'.
 - If a question touches marketing spend, tactics, or budgets → include 'dbs_marketing_sync'.
-- If a question touches per-subscriber economics, SAC, CLV, NPV, or activation data → include 'acquisition_data_v3'.
+- If a question touches per-subscriber economics, sales cahnnels, activation plans, packages, cash flow, SAC, NPV, or activation data → include 'acquisition_data_v3'.
 - If a question touches sales, calls, or buyers remorse → include 'sales_data_sync'.
 - When in doubt about whether a table is needed, include it rather than exclude it.
 - Return an empty list only if the question is completely unrelated to any data (e.g. a greeting).
