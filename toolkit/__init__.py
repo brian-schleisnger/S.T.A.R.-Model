@@ -76,30 +76,6 @@ TOOL_DISPATCHER = {
 }
 
 
-# Auto-generate OpenAI tool definitions directly from Pydantic schemas
-TOOL_SCHEMAS = [
-    execute_sql_query_tool_Schema,
-    run_ols_regression_tool_Schema,
-    run_forecasting_tool_Schema,
-    run_random_forest_tool_Schema,
-    run_pca_tool_Schema,
-    run_kmeans_clustering_tool_Schema,
-    generate_scatterplot_tool_Schema,
-    generate_barchart_tool_Schema,
-    generate_histogram_tool_Schema,
-    generate_linechart_tool_Schema,
-    calculate_cpa_tool_Schema,
-    calculate_ratio_tool_Schema,
-    run_scenario_planning_tool_Schema,
-    execute_python_tool_Schema,
-    run_neural_network_tool_Schema,
-    run_optimization_tool_Schema,
-    calculate_mutual_information_tool_schema,
-    join_dataframes_tool_schema,
-    pivot_dataframe_tool_schema
-]
-
-
 # ─── Schema Compatibility Helpers ────────────────────────────────────────────
 # Gemini (and some other non-OpenAI endpoints) reject JSON Schemas that contain
 # $defs / $ref, which Pydantic v2 emits for any nested or Union type.
@@ -144,4 +120,5 @@ def _flatten_tool(tool: dict) -> dict:
     return tool
 
 
+TOOL_SCHEMAS = [validator for _, validator in TOOL_DISPATCHER.values()]
 TOOLS = [_flatten_tool(pydantic_function_tool(schema)) for schema in TOOL_SCHEMAS]

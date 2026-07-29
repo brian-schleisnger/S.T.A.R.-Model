@@ -40,7 +40,7 @@ CATEGORY_REGISTRY: dict[str, dict] = {
     "RATIO_ANALYSIS": {
         "rule": "any question about CPA (cost per acquisition) or any ratio analysis that needs to be calculated",
         "tools": {
-            "calculate_cpa_tool": "CPA, CLV, CLV:CPA ratio, marketing efficiency.",
+            "calculate_cpa_tool": "CPA, marketing efficiency.",
             "calculate_ratio_tool": "monthly ratio or rate between two metrics over time."
         }
     },

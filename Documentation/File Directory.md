@@ -8,21 +8,39 @@
 
 &#x09;this is the primary long form memory system of the model. anytime a query is run, loop.py accesses cache.py at the beginning and at the end. once the question has ran and a response has been generated, loop then sends the question and response to cache. there, cache takes the response and stores the values as vectors (long strings of numbers). then, whenever a new question is run, loop goes and checks against cache's database. the new question is also embedded as a vector, and then that vector compares to all the other vectors in the cache. if there is one that is 92% similar (technically, if cosine similarity between the vectors is >.92) then the cache returns that similar response to loop, and loop skips the rest of it's steps and outputs that previous response. Note: the cache clears anytime you redeploy the app, meaning it's pretty temporary now, but as the model becomes more finalized, the cache will have longer windows to build up and be useful.
 
+&#x20; **categories.py**
+
+&#x09;This is a simple file that contains the map of all the tools that the model has access to. it used to be that you had to update loop.py and schemas.py, but they've been consolidated here.
+
 &#x20; **context.py**
 
 &#x09;this is a pretty simple file supporting the memory function of the model. it helps store the data retrieved by the llm's calls so that it can be referenced by the model in later questions in this chat string.
 
 &#x20; **loop.py**
 
-&#x09;This is the main file you want to reference if you want to understand the llm functionality. the main function, run\_agent\_loop, is the model's llm loop from start to finish. it (1) sends the question to cache to check if there was a similar question that was asked; (2) filter's the schema, A.K.A. looks at the question and decides what tables should be referenced (this is before the other questions to save tokens); (3) runs decompose question, a prompt to break one question into multiple as necessary (ex filtering a table is one question, running a regression is a second question); (4) for each of the questions decompose\_question came up with, it selects a tool to use and writes the arguments to go into the tool (column names, table names, etc.); (5) takes the arguments written by the llm and interfaces with either toolkit/analysis.py or toolkit/visuals.py to run the desired function; (6) collects the output from the tool usage and uses an llm to contextualize it; (7) returns all of the data, test, visuals, and tracking metrics to app.py for display.
+&#x09;This is the main file you want to reference if you want to understand the llm functionality. the main function, run\_agent\_loop, is the model's llm loop from start to finish. it: 
+
+(1) sends the question to cache to check if there was a similar question that was asked; 
+
+(2) filter's the schema, A.K.A. looks at the question and decides what tables should be referenced (this is before the other questions to save tokens); 
+
+(3) runs decompose question, a prompt to break one question into multiple as necessary (ex filtering a table is one question, running a regression is a second question); 
+
+(4) for each of the questions decompose\_question came up with, it selects a tool to use and writes the arguments to go into the tool (column names, table names, etc.); 
+
+(5) takes the arguments written by the llm and interfaces with the relevant toolkit file (analytics, transformations, or visuals) to execute and return the tool's output; 
+
+(6) collects the output from the tool usage and uses an llm to contextualize it; 
+
+(7) returns all of the data, test, visuals, and tracking metrics to app.py for display.
 
 &#x20; **memory.py**
 
 &#x09;This file primarily serves to support inter-turn memory. it uses a package called llmlingua, which essentially takes the tokens of a message and reduces it by about 40%. it also stores a class for supporting dataframes that an llm query creates.
 
-&#x20; schemas.py
+&#x20; **schemas.py**
 
-&#x09;So one issue I was having constantly at the beginning was that the llms weren't very good at understanding how to write their outputs in the right way. for example, when it wanted to use the regression tool, it would pass two column names into the function, but not know that it also needed to send the table name. Schemas was created to solve that issue. for every structured output an llm needs to give in this entire pipeline, there is a schema class that enforces the specific structure and data type the llm needs to return when referencing that thing. it's built off a library called pydantic.anytime you add a new tool, you have to make a new schema for it as well.
+&#x09;So one issue I was having constantly at the beginning was that the llms weren't very good at understanding how to write their outputs in the right way. for example, when it wanted to use the regression tool, it would pass two column names into the function, but not know that it also needed to send the table name. Schemas was created to solve that issue. for every structured output an llm needs to give in this entire pipeline, there is a schema class that enforces the specific structure and data type the llm needs to return when referencing that thing. it's built off a library called pydantic. anytime you add a new tool, you have to make a new schema for it as well.
 
 
 
@@ -84,7 +102,7 @@
 
 &#x20; **Transformations.py**
 
-&#x09;originally, this and analytics.py were all the same function, but I split them up to ensure not file as too long. this is where a few things live: the sql and python code tools, the data transformation tools that link and pivot dataframes, raio functions (and the custom built cpa function), and the link tables function (which supports queries from multiple databricks tables
+&#x09;originally, this and analytics.py were all the same function, but I split them up to ensure not file as too long. this is where a few things live: the sql and python code tools, the data transformation tools that link and pivot dataframes, ratio functions (and the custom built cpa function), and the link tables function (which supports queries from multiple databricks tables
 
 &#x20; **Validators.py**
 
