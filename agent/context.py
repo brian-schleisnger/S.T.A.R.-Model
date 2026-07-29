@@ -5,9 +5,10 @@ from agent.memory import DataFrameMemory, ContextOptimizer
 class SessionContext:
     """
     Holds all stateful information and memory objects required by the agent during a run.
-    By passing this context object into the agent loop, we decouple the core logic 
-    from UI frameworks like Streamlit, enabling CLI execution and automated testing.
+    By storing active_model here, we ensure multi-tenant session isolation.
     """
+    # Active LLM Model Selection (Isolated per user session)
+    active_model: str = "system.ai.gpt-5-4-nano"
     
     # Token Tracking
     input_tokens: int = 0
@@ -18,6 +19,5 @@ class SessionContext:
     estimated_cost: float = 0.0
     
     # Memory and Optimization Instances
-    # Using default_factory ensures each SessionContext gets its own isolated instance
     df_memory: DataFrameMemory = field(default_factory=DataFrameMemory)
     context_optimizer: ContextOptimizer = field(default_factory=ContextOptimizer)

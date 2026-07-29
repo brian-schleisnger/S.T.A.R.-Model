@@ -17,4 +17,5 @@ So in summary:
 2. add the tool schema to agent/schemas.py
 3. import the tool function and schemas to toolkit/\_\_init\_\_.py
 4. add the tool name/description to agent/categories.py
+5. save all the files, commit and push on GitHub desktop, and redeploy the app on databricks
 

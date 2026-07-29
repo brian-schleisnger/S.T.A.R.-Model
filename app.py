@@ -33,7 +33,7 @@ TIKTOKEN_ENCODING_URL = os.environ.get(
 )
 WORKSPACE_TIKTOKEN_PATH = os.environ.get(
     "WORKSPACE_TIKTOKEN_PATH", 
-    "/Shared/whl-loading/o200k_base.tiktoken"
+    "/Shared/star-stuff/o200k_base.tiktoken"
 )
 TORCH_CPU_WHEEL_NAME = os.environ.get(
     "TORCH_CPU_WHEEL_NAME", 
@@ -41,11 +41,11 @@ TORCH_CPU_WHEEL_NAME = os.environ.get(
 )
 WORKSPACE_WHL_DIR = os.environ.get(
     "WORKSPACE_WHL_DIR", 
-    "/Shared/whl-loading"
+    "/Shared/star-stuff"
 )
 MLFLOW_EXPERIMENT_PATH = os.environ.get(
     "MLFLOW_EXPERIMENT_PATH", 
-    "/Workspace/Users/brian.schlesinger@dish.com"
+    "/Workspace/star-stuff/"
 )
 
 # ─── 1. ENVIRONMENT BOOTSTRAPPING (CACHED) ───────────────────────────────
@@ -124,7 +124,7 @@ bootstrap_environment()
 from agent.loop import run_agent_loop
 from agent.cache import agent_cache
 from agent.context import SessionContext
-from toolkit.base import AVAILABLE_MODELS, ModelConfig, set_active_model
+from toolkit.base import AVAILABLE_MODELS
 
 # ─── 3. GLOBAL CONFIGURATION & UI HELPERS ────────────────────────────────
 # Set MLflow experiment once globally so it doesn't fire API calls on every chat turn
@@ -194,14 +194,25 @@ with st.sidebar:
 
     # ── Model Selection ──
     model_options = list(AVAILABLE_MODELS.keys())
+    
+    # Optional: Find the index of the currently active model so the dropdown remembers the choice
+    current_endpoint = st.session_state.context.active_model
+    default_index = 0
+    for i, (display_name, endpoint) in enumerate(AVAILABLE_MODELS.items()):
+        if endpoint == current_endpoint:
+            default_index = i
+            break
+
     selected_model = st.selectbox(
         "Active Model",
         options=model_options if model_options else ["No models configured"],
+        index=default_index,
         help="Select the model used for all reasoning steps.",
         disabled=not model_options,
     )
     if model_options:
-        set_active_model(selected_model)
+        # Save the endpoint directly to the user's isolated session context
+        st.session_state.context.active_model = AVAILABLE_MODELS[selected_model]
 
     st.divider()
 
@@ -342,7 +353,7 @@ if st.session_state.rerun_prompt is not None:
 
     with st.chat_message("assistant", avatar="🌐"):
         try:
-            with st.spinner(f"Re-running with `{ModelConfig.ACTIVE_MODEL}`..."):
+            with st.spinner("Re-running..."):
                 # Pass the context object here
                 result = run_agent_loop(rerun_prompt, history_before, st.session_state.context)
 

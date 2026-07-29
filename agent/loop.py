@@ -15,7 +15,7 @@ from agent.categories import CATEGORY_REGISTRY, CATEGORY_TOOLS
 from agent.context import SessionContext
 from agent.schemas import DecomposedQuestions
 from toolkit import TOOLS, TOOL_DISPATCHER
-from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call, ModelConfig, raw_client, track_tokens
+from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call
 
 
 # ─── 1. Context & Schema Helpers ─────────────────────────────────────────
@@ -52,34 +52,40 @@ def filter_schema(user_prompt: str, run_log: List[str] = None, context: SessionC
 
     prompt = f"""You are a data architect helping route a user's question to the correct database tables.
 
-User question: "{user_prompt}"
+            User question: "{user_prompt}"
 
-Below is the complete schema for every available table, including each table's description,
-column names, descriptions, and special rules:
+            Below is the complete schema for every available table, including each table's description,
+            column names, descriptions, and special rules:
 
-{json.dumps(full_schema_payload, indent=2)}
+            {json.dumps(full_schema_payload, indent=2)}
 
-Your task:
-- Read the user's question carefully.
-- Select ONLY the tables whose data is actually needed to answer it.
-- If a question touches revenue, costs, ARPU, OIBDA, or P&L line items → include 'dbspl_sync'.
-- If a question touches subscriber counts, gross/net adds, or churn → include 'subcount_data_synced'.
-- If a question touches marketing spend, tactics, or budgets → include 'dbs_marketing_sync'.
-- If a question touches per-subscriber economics, sales cahnnels, activation plans, packages, cash flow, SAC, NPV, or activation data → include 'acquisition_data_v3'.
-- If a question touches sales, calls, or buyers remorse → include 'sales_data_sync'.
-- When in doubt about whether a table is needed, include it rather than exclude it.
-- Return an empty list only if the question is completely unrelated to any data (e.g. a greeting).
+            Your task:
+            - Read the user's question carefully.
+            - Select ONLY the tables whose data is actually needed to answer it.
+            - If a question touches revenue, costs, ARPU, OIBDA, or P&L line items → include 'dbspl_sync'.
+            - If a question touches subscriber counts, gross/net adds, or churn → include 'subcount_data_synced'.
+            - If a question touches marketing spend, tactics, or budgets → include 'dbs_marketing_sync'.
+            - If a question touches per-subscriber economics, sales cahnnels, activation plans, packages, cash flow, SAC, NPV, or activation data → include 'acquisition_data_v3'.
+            - If a question touches sales, calls, or buyers remorse → include 'sales_data_sync'.
+            - When in doubt about whether a table is needed, include it rather than exclude it.
+            - Return an empty list only if the question is completely unrelated to any data (e.g. a greeting).
 
-Return ONLY a JSON object in this exact format — no markdown, no explanation:
-{{"required_tables": ["<exact table name>", ...]}}"""
+            Return ONLY a JSON object in this exact format — no markdown, no explanation:
+            {{"required_tables": ["<exact table name>", ...]}}"""
 
     msgs = [{"role": "user", "content": prompt}]
+
+    active_model = context.active_model if context else "system.ai.gpt-5-4-nano"
 
     class SchemaSelection(BaseModel):
         required_tables: List[str]
 
     try:
-        parsed_result = llm_call(msgs, response_model=SchemaSelection, model_name=ModelConfig.ACTIVE_MODEL, context=context)
+        parsed_result = llm_call(
+            msgs, 
+            response_model=SchemaSelection, 
+            model_name=active_model, 
+            context=context)
             
         filtered_dict = {}
         for t in parsed_result.required_tables:
@@ -151,7 +157,11 @@ def decompose_question(user_prompt: str,
     msgs = [{"role": "user", "content": prompt}]
     
     try:
-        parsed_result = llm_call(msgs, response_model=DecomposedQuestions, context=context)
+        parsed_result = llm_call(
+            msgs, 
+            response_model=DecomposedQuestions, 
+            context=context)
+        
         return parsed_result.questions
     except Exception as e:
         error_msg = f"Decomposition failed ({type(e).__name__}: {str(e)}). Falling back to raw prompt."
@@ -275,6 +285,8 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
     routing_latencies = {}
     
     t0_tools = time.perf_counter()
+
+    active_model = context.active_model if context else "system.ai.gpt-5-4-nano"
     
     for idx, sq_obj in enumerate(sub_questions):
         t0_sq = time.perf_counter()
@@ -314,13 +326,14 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 if allowed_names else TOOLS
             )
 
-            response = raw_client.chat.completions.create(
-                model=ModelConfig.ACTIVE_MODEL,
-                messages=msgs,
-                tools=active_tools,
-                timeout=20
+            response = llm_call(
+                messages=msgs, 
+                tools=active_tools, 
+                timeout=20, 
+                model_name=active_model, 
+                context=context
             )
-            track_tokens(response, context)
+
             assistant_msg = response.choices[0].message.model_dump(exclude_none=True)
             
             if not assistant_msg.get("tool_calls"):
@@ -390,14 +403,17 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
     
     clean_messages = [{"role": m["role"], "content": m.get("content", "")} for m in chat_history]
     final_msgs = clean_messages + [{"role": "user", "content": synthesis_prompt}]
+
+    active_model = context.active_model if context else "system.ai.gpt-5-4-nano"
     
     try:
-        response = raw_client.chat.completions.create(
-            model=ModelConfig.ACTIVE_MODEL,
-            messages=final_msgs,
-            timeout=20
+        response = llm_call(
+            messages=final_msgs, 
+            timeout=20, 
+            model_name=active_model, 
+            context=context
         )
-        track_tokens(response, context)
+        
         final_text = _extract_text_content(response.choices[0].message)
     except Exception as e:
         error_trace = traceback.format_exc()

@@ -62,19 +62,6 @@ def calculate_cost(model_endpoint: str, input_tokens: int, output_tokens: int) -
     output_cost = (output_tokens / 1_000_000) * output_dbus_per_m * DBU_COST
     return input_cost + output_cost
 
-class ModelConfig:
-    """
-    Global configuration holder for the active LLM endpoint.
-    ACTIVE_MODEL is updated at runtime via set_active_model() when the user
-    selects a model from the sidebar, and is read by every LLM call site.
-    """
-    # The single model used for all LLM calls (routing, decomposition, synthesis).
-    # Updated at runtime by set_active_model() when the user picks from the sidebar.
-    ACTIVE_MODEL: str = next(iter(AVAILABLE_MODELS.values()), "")
-
-def set_active_model(display_name: str) -> None:
-    """Updates the single active model endpoint based on the user's sidebar selection."""
-    ModelConfig.ACTIVE_MODEL = AVAILABLE_MODELS.get(display_name, ModelConfig.ACTIVE_MODEL)
         
 DATABRICKS_HOST = os.environ.get('DATABRICKS_HOST', '').rstrip('/')
 PGHOST = os.environ.get("PGHOST")
@@ -269,18 +256,31 @@ def _extract_text_content(message) -> str:
     return str(content)
 
 
-def llm_call(messages: list, response_model: BaseModel, model_name: str = None, context: SessionContext = None):
+def llm_call(
+    messages: list, 
+    response_model: BaseModel = None, 
+    tools: list = None, 
+    timeout: int = 20, 
+    model_name: str = None, 
+    context: SessionContext = None
+):
     """
-    Structured-output LLM call with cross-model compatibility.
-
-    - GPT endpoints: uses instructor TOOLS mode (native tool-calling + JSON schema).
-      Requires a real OpenAI instance, so uses _make_fresh_openai_client() directly.
-    - All other endpoints (Gemini, Claude, etc.): uses raw_client for the completion
-      call so token rotation and Claude 'strict' sanitization are handled automatically,
-      then parses the plain-text JSON response with Pydantic.
+    Unified LLM call supporting both structured JSON outputs (via instructor/schema)
+    and native chat completions (with or without tools).
     """
-    resolved_model = model_name or ModelConfig.ACTIVE_MODEL
+    resolved_model = model_name or (context.active_model if context else "system.ai.gpt-5-4-nano")
 
+    # --- 1. Standard Chat/Tool Completion (No Pydantic Model) ---
+    if not response_model:
+        kwargs = {"model": resolved_model, "messages": messages, "timeout": timeout}
+        if tools:
+            kwargs["tools"] = tools
+            
+        raw_res = raw_client.chat.completions.create(**kwargs)
+        track_tokens(raw_res, context)
+        return raw_res
+
+    # --- 2. Structured Output (Pydantic Model Provided) ---
     if _is_gpt_model(resolved_model):
         fresh_client = _make_fresh_openai_client()
         fresh_instructor_client = instructor.from_openai(fresh_client)
@@ -290,12 +290,9 @@ def llm_call(messages: list, response_model: BaseModel, model_name: str = None, 
             response_model=response_model,
             max_retries=3
         )
-        # Pass context here
         track_tokens(raw_res, context) 
         return model_res
     else:
-        # Non-GPT (Gemini, Claude, etc.): inject a plain-text JSON instruction and
-        # use raw_client so Claude's 'strict' stripping and token rotation apply.
         schema_str = json.dumps(response_model.model_json_schema(), indent=2)
         json_instruction = (
             f"\n\nYou MUST respond with a single valid JSON object that strictly conforms "
@@ -303,9 +300,6 @@ def llm_call(messages: list, response_model: BaseModel, model_name: str = None, 
         )
 
         augmented_messages = list(messages)
-
-        # Append JSON instructions to the existing system prompt if one exists,
-        # otherwise prepend a new system message.
         system_prompt_index = next(
             (i for i, msg in enumerate(augmented_messages) if msg.get("role") == "system"), -1
         )
@@ -319,13 +313,12 @@ def llm_call(messages: list, response_model: BaseModel, model_name: str = None, 
         for attempt in range(3):
             raw_res = raw_client.chat.completions.create(
                 model=resolved_model,
-                messages=augmented_messages
+                messages=augmented_messages,
+                timeout=timeout
             )
-            # Pass context here
             track_tokens(raw_res, context) 
             text = _extract_text_content(raw_res.choices[0].message).strip()
 
-            # Strip markdown fences if the model wrapped the JSON anyway
             if text.startswith("```"):
                 text = text.split("```")[1]
                 if text.startswith("json"):
@@ -336,7 +329,6 @@ def llm_call(messages: list, response_model: BaseModel, model_name: str = None, 
                 return response_model.model_validate_json(text)
             except Exception as exc:
                 last_exc = exc
-                # Feed the error back so the model can self-correct on the next attempt
                 augmented_messages = augmented_messages + [
                     {"role": "assistant", "content": text},
                     {"role": "user", "content": f"That response failed validation: {exc}. Please return only valid JSON."}
@@ -346,10 +338,9 @@ def llm_call(messages: list, response_model: BaseModel, model_name: str = None, 
 
 def track_tokens(response, context: SessionContext):
     """
-    Extracts token usage from a live API response and accumulates it into the session context.
-    Cost is calculated immediately using the currently active model's rates.
+    Extracts token usage from a live API response and calculates cost based on 
+    the active model saved in the session context.
     """
-    # Guard clause in case context isn't passed from an isolated test script
     if not context:
         return
 
@@ -362,9 +353,9 @@ def track_tokens(response, context: SessionContext):
         context.output_tokens += output_t
         context.total_tokens += total_t
 
-        # Accumulate cost into the context object
+        # Uses context.active_model instead of global ModelConfig.ACTIVE_MODEL
         context.estimated_cost += calculate_cost(
-            ModelConfig.ACTIVE_MODEL, input_t, output_t
+            context.active_model, input_t, output_t
         )
 
 def get_join_clause(table_a: str, table_b: str) -> str:
