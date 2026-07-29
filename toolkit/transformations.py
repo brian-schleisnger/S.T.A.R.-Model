@@ -11,6 +11,7 @@ from agent.memory import DataFrameMemory
 from .base import run_sql_query, get_join_clause, TABLE_DIMENSIONS
 from .validators import validate_safe_python_code, SecurityViolationError
 
+
 __all__ = [
     "link_tables",
     "execute_sql_query_tool",
@@ -21,8 +22,10 @@ __all__ = [
     "execute_python_tool",
 ]
 
+
+# ─── Helper Functions ───────────────────────────────────────────
 @mlflow.trace(name="link_tables")
-def link_tables(
+def _link_tables(
     tables: Union[str, List[str]], 
     columns: Optional[List[str]] = None, 
     where_clause: Optional[str] = None, 
@@ -110,6 +113,29 @@ def link_tables(
     return df
 
 
+# ─── SQL Retreival Tool ───────────────────────────────────────────
+@mlflow.trace(name="execute_sql_query")
+def execute_sql_query_tool(sql_query: str) -> dict:
+    """
+    Executes an arbitrary PostgreSQL query and returns up to 100 preview rows as CSV text.
+    Returns a dict with 'text' (summary + CSV preview) and 'data' (full DataFrame).
+    """
+    try:
+        df = run_sql_query(sql_query)
+        if df.empty:
+            return {"text": "Error: Query executed successfully, but returned 0 rows.", "data": None}
+        
+        csv_text = df.head(100).to_csv(index=False)
+        return {"text": f"Success. Showing top 100 rows:\n{csv_text}", "data": df}
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "does not exist" in error_msg.lower() or "missingcolumn" in error_msg.lower():
+             return {"text": f"Error executing SQL: {error_msg}\n\nSYSTEM HINT: Do not query information_schema. Look at the JSON schema in your system prompt for the correct exact column names (e.g., Activation_Year instead of Year).", "data": None}
+        return {"text": f"Error executing SQL: {error_msg}", "data": None}
+
+
+# ─── Data Transformation Tools ───────────────────────────────────────────
 @mlflow.trace(name="join_dataframes_tool")
 def join_dataframes_tool(
     left_dataframe_id: str, 
@@ -203,29 +229,9 @@ def pivot_dataframe_tool(
         return {"text": f"Pivot Execution Error: {str(e)}", "data": None}
 
 
-@mlflow.trace(name="execute_sql_query")
-def execute_sql_query_tool(sql_query: str) -> dict:
-    """
-    Executes an arbitrary PostgreSQL query and returns up to 100 preview rows as CSV text.
-    Returns a dict with 'text' (summary + CSV preview) and 'data' (full DataFrame).
-    """
-    try:
-        df = run_sql_query(sql_query)
-        if df.empty:
-            return {"text": "Error: Query executed successfully, but returned 0 rows.", "data": None}
-        
-        csv_text = df.head(100).to_csv(index=False)
-        return {"text": f"Success. Showing top 100 rows:\n{csv_text}", "data": df}
-        
-    except Exception as e:
-        error_msg = str(e)
-        if "does not exist" in error_msg.lower() or "missingcolumn" in error_msg.lower():
-             return {"text": f"Error executing SQL: {error_msg}\n\nSYSTEM HINT: Do not query information_schema. Look at the JSON schema in your system prompt for the correct exact column names (e.g., Activation_Year instead of Year).", "data": None}
-        return {"text": f"Error executing SQL: {error_msg}", "data": None}
-    
-
+# ─── Ratio Analysis Tools ───────────────────────────────────────────
 @mlflow.trace(name="calculate_unit_economics_tool")
-def calculate_unit_economics_tool(marketing_where_clause: str = None, subscriber_where_clause: str = None) -> dict:
+def calculate_cpa_tool(marketing_where_clause: str = None, subscriber_where_clause: str = None) -> dict:
     """
     Joins monthly marketing spend against monthly activation counts to compute
     CPA (Cost Per Acquisition), CLV (Customer Lifetime Value via NPV of MCF), and
@@ -239,7 +245,7 @@ def calculate_unit_economics_tool(marketing_where_clause: str = None, subscriber
     # Kept as-is since the schema explicitly handles the two-table where clauses without a TABLE_NAME arg.
     try:
         # 1. Marketing Data
-        df_mkt = link_tables(
+        df_mkt = _link_tables(
             tables='"sandbox"."dbs_marketing_sync"',
             # Keep the quotes for Postgres, but drop the 'AS' alias
             columns=['"Year"', '"Month"', 'SUM("Amount") AS total_spend'], 
@@ -253,7 +259,7 @@ def calculate_unit_economics_tool(marketing_where_clause: str = None, subscriber
             df_mkt.columns = [col.replace('"', '') for col in df_mkt.columns]
 
         # 2. Acquisition Data
-        df_acq = link_tables(
+        df_acq = _link_tables(
             tables='"sandbox"."subcount_data_synced"',
             # Keep the quotes to protect the capital letters for Postgres
             columns=[
@@ -355,7 +361,7 @@ def calculate_ratio_tool(
             y_col, m_col = dims["year"], dims["month"]
             
             # Perform SQL Pushdown Aggregation
-            df = link_tables(
+            df = _link_tables(
                 tables=table_name,
                 columns=[f'"{y_col}"', f'"{m_col}"', f'{sql_agg}("{col_name}") AS val'],
                 where_clause=where_clause,
@@ -412,6 +418,7 @@ def calculate_ratio_tool(
         return {"text": f"Ratio Calculation Error: {e}", "data": None}
     
 
+# ─── Custom Python Tool ───────────────────────────────────────────
 @mlflow.trace(name="execute_python_tool")
 def execute_python_tool(
     code: str, 
@@ -436,9 +443,9 @@ def execute_python_tool(
                 table_list = list(TABLE_NAME)
 
             if len(table_list) == 1:
-                df = link_tables(table_list[0], limit=100000)
+                df = _link_tables(table_list[0], limit=100000)
             else:
-                df = [link_tables(t, limit=100000) for t in table_list]
+                df = [_link_tables(t, limit=100000) for t in table_list]
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
             

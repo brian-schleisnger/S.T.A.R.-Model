@@ -6,9 +6,10 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from .transformations import link_tables
+from .transformations import _link_tables
 from .base import run_sql_query
 from agent.memory import DataFrameMemory
+
 
 __all__ = [
     "generate_scatterplot_tool",
@@ -18,6 +19,7 @@ __all__ = [
 ]
 
 
+# ─── Helper Functions ───────────────────────────────────────────
 def _resolve_column(requested_col: str, df: pd.DataFrame) -> str:
     """Safely resolves column names in Pandas DataFrames after SQL execution."""
     if not requested_col or df.empty:
@@ -93,7 +95,7 @@ def _fetch_chart_data(
             if cat_clean: cols_to_fetch.append(f'"{cat_clean}"')
             cols_to_fetch.append(y_sql)
             
-            df = link_tables(
+            df = _link_tables(
                 TABLE_NAME, 
                 columns=cols_to_fetch, 
                 where_clause=where_clause, 
@@ -108,7 +110,7 @@ def _fetch_chart_data(
             if y_clean: cols_to_fetch.append(f'"{y_clean}"')
             if cat_clean: cols_to_fetch.append(f'"{cat_clean}"')
             
-            df = link_tables(TABLE_NAME, columns=cols_to_fetch, where_clause=where_clause, random_order=True, limit=limit)
+            df = _link_tables(TABLE_NAME, columns=cols_to_fetch, where_clause=where_clause, random_order=True, limit=limit)
             y_target = y_clean
 
         if df.empty:
@@ -124,49 +126,7 @@ def _fetch_chart_data(
         raise ValueError("Must provide either TABLE_NAME or dataframe_id.")
 
 
-@mlflow.trace(name="generate_scatterplot_tool")
-def generate_scatterplot_tool(
-    x_column: str, 
-    y_column: str, 
-    TABLE_NAME: Optional[Union[str, List[str]]] = None,
-    dataframe_id: Optional[str] = None,
-    category_column: Optional[str] = None, 
-    where_clause: Optional[str] = None, 
-    include_trendline: bool = False
-) -> Dict[str, Any]:
-    """
-    Generates an interactive Plotly scatterplot of y_column vs x_column.
-    Optionally color-codes points by category_column and overlays an OLS trendline.
-    Both axes are coerced to numeric and non-finite rows are dropped before plotting.
-    Returns the figure object, the plotted DataFrame, and a status text string.
-    """
-    try:
-        df, x_col, y_col, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause)
-        
-        df[x_col] = pd.to_numeric(df[x_col], errors='coerce')
-        df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
-        df = df.dropna(subset=[x_col, y_col])
-
-        if len(df) < 2:
-            return {"text": "Error: Not enough valid numeric data points.", "data": None, "figure": None}
-
-        kwargs = {
-            "x": x_col, "y": y_col, "trendline": "ols" if (include_trendline and len(df) > 3) else None,
-            "title": f"Scatterplot: {y_col} vs {x_col}",
-            "template": "plotly_white", "opacity": 0.75
-        }
-        if cat_col and cat_col in df.columns:
-            df[cat_col] = df[cat_col].astype(str)
-            kwargs["color"] = cat_col
-
-        fig = px.scatter(df, **kwargs)
-        fig.update_layout(hovermode="closest", margin=dict(l=40, r=40, t=60, b=40))
-
-        return {"text": f"Successfully generated scatterplot ({len(df)} points).", "data": df, "figure": fig}
-    except Exception as e:
-        return {"text": f"Scatterplot Error: {str(e)}", "data": None, "figure": None}
-
-
+# ─── Visualization Tools ───────────────────────────────────────────
 @mlflow.trace(name="generate_barchart_tool")
 def generate_barchart_tool(
     x_column: str, 
@@ -280,3 +240,46 @@ def generate_linechart_tool(
         return {"text": f"Successfully generated line chart.", "data": df, "figure": fig}
     except Exception as e:
         return {"text": f"Line Chart Error: {str(e)}", "data": None, "figure": None}
+
+
+@mlflow.trace(name="generate_scatterplot_tool")
+def generate_scatterplot_tool(
+    x_column: str, 
+    y_column: str, 
+    TABLE_NAME: Optional[Union[str, List[str]]] = None,
+    dataframe_id: Optional[str] = None,
+    category_column: Optional[str] = None, 
+    where_clause: Optional[str] = None, 
+    include_trendline: bool = False
+) -> Dict[str, Any]:
+    """
+    Generates an interactive Plotly scatterplot of y_column vs x_column.
+    Optionally color-codes points by category_column and overlays an OLS trendline.
+    Both axes are coerced to numeric and non-finite rows are dropped before plotting.
+    Returns the figure object, the plotted DataFrame, and a status text string.
+    """
+    try:
+        df, x_col, y_col, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause)
+        
+        df[x_col] = pd.to_numeric(df[x_col], errors='coerce')
+        df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
+        df = df.dropna(subset=[x_col, y_col])
+
+        if len(df) < 2:
+            return {"text": "Error: Not enough valid numeric data points.", "data": None, "figure": None}
+
+        kwargs = {
+            "x": x_col, "y": y_col, "trendline": "ols" if (include_trendline and len(df) > 3) else None,
+            "title": f"Scatterplot: {y_col} vs {x_col}",
+            "template": "plotly_white", "opacity": 0.75
+        }
+        if cat_col and cat_col in df.columns:
+            df[cat_col] = df[cat_col].astype(str)
+            kwargs["color"] = cat_col
+
+        fig = px.scatter(df, **kwargs)
+        fig.update_layout(hovermode="closest", margin=dict(l=40, r=40, t=60, b=40))
+
+        return {"text": f"Successfully generated scatterplot ({len(df)} points).", "data": df, "figure": fig}
+    except Exception as e:
+        return {"text": f"Scatterplot Error: {str(e)}", "data": None, "figure": None}

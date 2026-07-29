@@ -11,13 +11,35 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from agent.cache import agent_cache
+from agent.categories import CATEGORY_REGISTRY, CATEGORY_TOOLS
 from agent.context import SessionContext
 from agent.schemas import DecomposedQuestions
 from toolkit import TOOLS, TOOL_DISPATCHER, CATEGORY_TOOLS
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call, ModelConfig, raw_client, track_tokens
 
-# ─── 1. Context & Schema Helpers ─────────────────────────────────────────
 
+def build_tool_selection_prompt(category_hint: str, relevant_schema: dict) -> str:
+    prompt_lines = [
+        "You are a tool-selection assistant. Your only job is to call the right tool for the sub-question below.\n",
+        f"Category: {category_hint}",
+        "Available tools for this category:\n"
+    ]
+    
+    # Generate category tool list dynamically from the registry
+    for cat, data in CATEGORY_REGISTRY.items():
+        tool_descriptions = [f"{tool_name} ({desc})" for tool_name, desc in data["tools"].items()]
+        prompt_lines.append(f"{cat:<22} → {', '.join(tool_descriptions)}")
+        
+    prompt_lines.extend([
+        "\nDATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as "
+        "dataframe_id instead of re-querying the database.\n",
+        f"Use this exact schema for all column names: {json.dumps(relevant_schema)}"
+    ])
+    
+    return "\n".join(prompt_lines)
+
+
+# ─── 1. Context & Schema Helpers ─────────────────────────────────────────
 def filter_schema(user_prompt: str, run_log: List[str] = None, context: SessionContext = None) -> dict:
     """
     Uses an LLM call to select which tables from DATA_DICTIONARY are needed to
@@ -363,35 +385,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
                 sq_text = getattr(sq_obj, "question", str(sq_obj))
                 category_hint = getattr(sq_obj, "target_category", "SQL_RETRIEVAL")
 
-            prompt = f"""You are a tool-selection assistant. Your only job is to call the right tool for the sub-question below.
-
-            Category: {category_hint}
-            Available tools for this category:
-
-            SQL_RETRIEVAL          → execute_sql_query_tool: simple lookup, filter, or aggregation (SUM/AVG/COUNT/GROUP BY).
-            UNIT_ECONOMICS         → calculate_unit_economics_tool: CPA, CLV, CLV:CPA ratio, marketing efficiency.
-            STATISTICAL_MODELING   → run_ols_regression_tool (linear relationships / impact of X on Y),
-                                     run_pca_tool (dimensionality reduction / variance decomposition),
-                                     run_kmeans_clustering_tool (segmentation / natural groupings),
-                                     calculate_mutual_information_tool (mutual information and information theory).
-            ML_MODELING            → run_random_forest_tool (non-linear prediction / feature importance),
-                                     run_neural_network_tool (complex non-linear modeling),
-                                     run_optimization_tool (budget allocation / linear programming).
-            FORECASTING            → run_forecasting_tool: time-series prediction of future values.
-            SCENARIO_SIMULATION    → run_scenario_planning_tool: what-if analysis, simulate variable changes, confidence intervals.
-            VISUALIZATION          → generate_barchart_tool (compare across categories/time),
-                                     generate_linechart_tool (trends over time),
-                                     generate_scatterplot_tool (relationship between two numeric variables),
-                                     generate_histogram_tool (distribution / outliers),
-                                     compare_monthly_metrics_tool (monthly spend vs acquisition side-by-side).
-            CUSTOM_PYTHON          → execute_python_tool: multi-step or cross-table analysis no single tool can handle.
-            DATA_TRANSFORMATION    → join_dataframes_tool: merges two previously saved dataframes together on specific columns.
-                                     pivot_dataframe_tool: reshape long-form tables into wide side by side format
-
-            DATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as
-            dataframe_id instead of re-querying the database.
-
-            Use this exact schema for all column names: {json.dumps(relevant_schema)}"""
+            prompt = build_tool_selection_prompt(category_hint, relevant_schema)
             
             # Build the system prompt, merging intra-turn context in so there is
             # never more than one system message (Gemini rejects multiple system prompts).
