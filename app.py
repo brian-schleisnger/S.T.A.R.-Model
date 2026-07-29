@@ -364,10 +364,15 @@ if st.session_state.rerun_prompt is not None:
                 st.code(traceback.format_exc(), language="python")
 
 # ─── 9. CHAT INPUT & EXECUTION ───────────────────────────────────────────
-if prompt := st.chat_input("Ask a question about the marketing data..."):
+if prompt := st.chat_input("Ask a question about the data..."):
+    # 1. Immediately save the user's prompt to state so it survives any reruns
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # 2. Display the user's prompt
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
+    # 3. Run the agent and save the assistant's response
     with st.chat_message("assistant", avatar="🌐"):
         try:
             with st.spinner("Analyzing..."):
@@ -376,7 +381,7 @@ if prompt := st.chat_input("Ask a question about the marketing data..."):
             
             st.session_state.last_step_latencies = result.get("step_latencies", {})
             
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            # 4. Only append the assistant's response here
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": result["final_text"],
