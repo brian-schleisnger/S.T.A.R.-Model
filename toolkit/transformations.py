@@ -342,8 +342,10 @@ def calculate_ratio_tool(
 ) -> dict:
     
     VALID_AGGS = {"SUM": "sum", "AVG": "mean", "COUNT": "count"}
-    num_agg_sql = numerator_aggregation.upper() if numerator_aggregation.upper() in VALID_AGGS else "SUM"
-    den_agg_sql = denominator_aggregation.upper() if denominator_aggregation.upper() in VALID_AGGS else "SUM"
+    
+    # Safely check if the aggregation variables are not None before calling .upper()
+    num_agg_sql = numerator_aggregation.upper() if numerator_aggregation and numerator_aggregation.upper() in VALID_AGGS else "SUM"
+    den_agg_sql = denominator_aggregation.upper() if denominator_aggregation and denominator_aggregation.upper() in VALID_AGGS else "SUM"
     
     num_agg_pd = VALID_AGGS.get(num_agg_sql, "sum")
     den_agg_pd = VALID_AGGS.get(den_agg_sql, "sum")
