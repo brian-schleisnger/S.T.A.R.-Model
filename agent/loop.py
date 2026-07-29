@@ -1,14 +1,14 @@
 import concurrent.futures
 import inspect
 import json
+import time
 import traceback
 from typing import Any, Dict, List, Tuple
-
-from pydantic import BaseModel
 
 import mlflow
 import pandas as pd
 import plotly.graph_objects as go
+from pydantic import BaseModel
 
 from agent.cache import agent_cache
 from agent.categories import CATEGORY_REGISTRY, CATEGORY_TOOLS
@@ -18,51 +18,18 @@ from toolkit import TOOLS, TOOL_DISPATCHER
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call, ModelConfig, raw_client, track_tokens
 
 
-def build_tool_selection_prompt(category_hint: str, relevant_schema: dict) -> str:
-    prompt_lines = [
-        "You are a tool-selection assistant. Your only job is to call the right tool for the sub-question below.\n",
-        f"Category: {category_hint}",
-        "Available tools for this category:\n"
-    ]
-    
-    # Generate category tool list dynamically from the registry
-    for cat, data in CATEGORY_REGISTRY.items():
-        tool_descriptions = [f"{tool_name} ({desc})" for tool_name, desc in data["tools"].items()]
-        prompt_lines.append(f"{cat:<22} → {', '.join(tool_descriptions)}")
-        
-    prompt_lines.extend([
-        "\nDATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as "
-        "dataframe_id instead of re-querying the database.\n",
-        f"Use this exact schema for all column names: {json.dumps(relevant_schema)}"
-    ])
-    
-    return "\n".join(prompt_lines)
-
-
 # ─── 1. Context & Schema Helpers ─────────────────────────────────────────
 def filter_schema(user_prompt: str, run_log: List[str] = None, context: SessionContext = None) -> dict:
     """
     Uses an LLM call to select which tables from DATA_DICTIONARY are needed to
-    answer the user's prompt.
-
-    Sends each table's full metadata and column-level schema (omitting verbose
-    reference_data arrays) so the model has enough signal to make accurate routing 
-    decisions without an unnecessarily large prompt.
+    answer the user's prompt. Omit verbose reference arrays to save tokens.
     """
-
     def _build_table_summary(table_name: str, table_data: dict) -> dict:
-        """
-        Extracts the routing-relevant fields from a dictionary entry adhering to 
-        the new standardized format. Omits the heavy 'reference_data' arrays.
-        """
         meta = table_data.get("table_metadata", {})
-        
-        # Use table_name from metadata if available, otherwise default to the dict key
         actual_table_name = meta.get("table_name", table_name)
         description = meta.get("description", "")
         special_rules = meta.get("special_rules", [])
 
-        # Extract column names and descriptions, ignoring formulas and outcomes for routing
         raw_columns = table_data.get("columns", [])
         columns = []
         for col in raw_columns:
@@ -109,37 +76,27 @@ Return ONLY a JSON object in this exact format — no markdown, no explanation:
     msgs = [{"role": "user", "content": prompt}]
 
     class SchemaSelection(BaseModel):
-        """Structured output model for the schema-filtering LLM call."""
         required_tables: List[str]
 
     try:
-        # Pass the context into llm_call so token tracking works
         parsed_result = llm_call(msgs, response_model=SchemaSelection, model_name=ModelConfig.ACTIVE_MODEL, context=context)
             
         filtered_dict = {}
         for t in parsed_result.required_tables:
-            # 1. Clean the LLM output: remove any quotes, strip spaces, and make lowercase
             t_clean = t.replace('"', '').replace("'", "").strip().lower()
-            
-            # 2. Strip the schema prefix if the LLM hallucinated one (e.g., 'sandbox.table_name' -> 'table_name')
             if "." in t_clean:
                 t_clean = t_clean.split(".")[-1]
                 
             matched = False
-            
-            # 3. Try matching the dictionary key (case-insensitive)
             for key, data in DATA_DICTIONARY.items():
                 if key.strip().lower() == t_clean:
                     filtered_dict[key] = data
                     matched = True
                     break
             
-            # 4. Fallback: match the 'table_name' inside the metadata
             if not matched:
                 for key, data in DATA_DICTIONARY.items():
                     meta_name = data.get("table_metadata", {}).get("table_name", "")
-                    
-                    # Clean the metadata name just in case it has weird formatting in the JSON
                     meta_clean = meta_name.replace('"', '').replace("'", "").strip().lower()
                     if "." in meta_clean:
                         meta_clean = meta_clean.split(".")[-1]
@@ -171,9 +128,7 @@ def decompose_question(user_prompt: str,
                        context_optimizer, 
                        context: SessionContext = None
                        ) -> List[str]:
-    """Step 1: Breaks the user's prompt into specific data questions using chat history."""
-    
-    # Prune by exact token budget and compress dense historical context
+    """Breaks the user's prompt into specific data questions using chat history."""
     history_text = context_optimizer.format_history_for_prompt(history, max_tokens=50000)
     
     prompt = f"""You are a data strategist. Break the user's broad request down into specific, actionable sub-questions, and assign each one the correct category.
@@ -191,34 +146,47 @@ def decompose_question(user_prompt: str,
     3. If the user is asking a general question, greeting you, or asking about your capabilities, return the user's exact prompt as a single item with category SQL_RETRIEVAL and do NOT generate data queries.
     4. Use the 'Recent Conversation History' to resolve pronouns and missing context. Every sub-question must be fully self-contained.
     5. Do NOT break a single statistical model (Regression, Random Forest, ARIMA, etc.) into separate sub-questions for each metric. Group all requirements for one model into ONE sub-question.
-    6. Make important note of the data structures, and plan your questiona accordingly. example: if user asks how two metrics compare, have the first subquestion pull those metrics, then have the next subquestion analyze that pulled data."""
+    6. Make important note of the data structures, and plan your question accordingly. example: if user asks how two metrics compare, have the first subquestion pull those metrics, then have the next subquestion analyze that pulled data."""
     
     msgs = [{"role": "user", "content": prompt}]
     
     try:
-        # Pass the context into llm_call
         parsed_result = llm_call(msgs, response_model=DecomposedQuestions, context=context)
         return parsed_result.questions
     except Exception as e:
-        # Improved error logging instead of silently swallowing the failure
         error_msg = f"Decomposition failed ({type(e).__name__}: {str(e)}). Falling back to raw prompt."
         run_log.append(error_msg)
         return [user_prompt]
     
 
-# ─── 2. Extracted Tool Execution Engine ──────────────────────────────────
+# ─── 2. Tool Execution & Routing Engine ──────────────────────────────────
+def build_tool_selection_prompt(category_hint: str, relevant_schema: dict) -> str:
+    """Builds the system prompt for the tool-selection LLM call."""
+    prompt_lines = [
+        "You are a tool-selection assistant. Your only job is to call the right tool for the sub-question below.\n",
+        f"Category: {category_hint}",
+        "Available tools for this category:\n"
+    ]
+    
+    # Generate category tool list dynamically from the registry
+    for cat, data in CATEGORY_REGISTRY.items():
+        tool_descriptions = [f"{tool_name} ({desc})" for tool_name, desc in data["tools"].items()]
+        prompt_lines.append(f"{cat:<22} → {', '.join(tool_descriptions)}")
+        
+    prompt_lines.extend([
+        "\nDATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as "
+        "dataframe_id instead of re-querying the database.\n",
+        f"Use this exact schema for all column names: {json.dumps(relevant_schema)}"
+    ])
+    
+    return "\n".join(prompt_lines)
+
 
 def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str], df_memory: Any) -> Tuple[str, bool, List[Any]]:
-    """
-    Handles parsing, Pydantic validation, and execution of a single tool call.
-    Includes a hard timeout to prevent runaway executions.
-    Returns: (output_text, has_error, extracted_data_objects)
-    """
+    """Handles parsing, Pydantic validation, and execution of a single tool call with timeout."""
     tool_name = tool_call["function"]["name"]
-    call_id = tool_call.get("id", "call_id")
     extracted_objects = []
     
-    # 1. Parse & Validate Arguments
     try:
         raw_args = json.loads(tool_call["function"]["arguments"])
         if tool_name in TOOL_DISPATCHER:
@@ -232,21 +200,17 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         run_log.append(error_msg)
         return error_msg, True, []
 
-    # Format the log entry nicely for readability
     log_entry = f"Attempt {attempt+1}: Agent selected {tool_name}"
-    
     if tool_name == "execute_python_tool" and "code" in clean_args:
         log_entry += f"\n\nPython Code:\n{clean_args['code']}"
     elif tool_name == "execute_sql_query_tool" and "sql_query" in clean_args:
         log_entry += f"\n\nSQL Query:\n{clean_args['sql_query']}"
     else:
-        # Pretty-print JSON for other tools and unescape any hidden newlines
         formatted_args = json.dumps(clean_args, indent=2).replace('\\n', '\n')
         log_entry += f" with args:\n{formatted_args}"
         
     run_log.append(log_entry)
     
-    # 2. Execute Tool
     if tool_name not in TOOL_DISPATCHER:
         error_msg = f"Error: Tool '{tool_name}' does not exist in TOOL_DISPATCHER."
         run_log.append(error_msg)
@@ -254,22 +218,18 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
 
     func, _ = TOOL_DISPATCHER[tool_name]
     try:
-        # Dynamically inject df_memory ONLY if the tool accepts it in its signature
         if "df_memory" in inspect.signature(func).parameters:
             clean_args["df_memory"] = df_memory
 
-        # --- TIMEOUT WRAPPER IMPLEMENTATION ---
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(func, **clean_args)
             try:
-                # Hard cap of 30 seconds per tool execution
                 result = future.result(timeout=30.0)
             except concurrent.futures.TimeoutError:
                 error_msg = f"Error: Tool '{tool_name}' timed out after 30 seconds. Execution aborted."
                 run_log.append(error_msg)
                 return error_msg, True, []
         
-        # 3. Handle Results
         if isinstance(result, dict):
             if result.get("status") == "error":
                 output_text = result.get("message", "Tool failed internally.")
@@ -278,9 +238,7 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
             
             output_text = result.get("text", "Tool executed successfully.")
             
-            # --- MEMORY INJECTION ---
             if result.get("data") is not None and isinstance(result["data"], pd.DataFrame):
-                # Save to registry and append the ID to the LLM's view
                 df_id = df_memory.save_df(result["data"])
                 output_text += f"\n[System Note: Data saved to Python memory with ID: {df_id}]"
                 extracted_objects.append(result["data"])
@@ -291,7 +249,6 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         else:
             output_text = str(result)
             
-        # Check for actual failure signatures rather than the generic word "Error"
         error_signatures = ["Error:", "Error executing", "Exception:", "Failed:"]
         has_error = any(sig in output_text for sig in error_signatures)
         
@@ -305,12 +262,152 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         run_log.append(error_msg)
         run_log.append(traceback.format_exc())
         return error_msg, True, []
+
+
+def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_history: List[dict], context: SessionContext, run_log: List[str]) -> Tuple[List[str], List[Any], Dict[str, float]]:
+    """
+    Iterates through decomposed sub-questions, routing them to the correct LLM tools,
+    handling retries, and capturing the resultant data and latencies.
+    """
+    df_memory = context.df_memory
+    raw_outputs = []
+    current_turn_dfs = []
+    routing_latencies = {}
     
+    t0_tools = time.perf_counter()
+    
+    for idx, sq_obj in enumerate(sub_questions):
+        t0_sq = time.perf_counter()
+        if isinstance(sq_obj, str):
+            sq_text = sq_obj
+            category_hint = "SQL_RETRIEVAL"
+        elif isinstance(sq_obj, dict):
+            sq_text = sq_obj.get("question", str(sq_obj))
+            category_hint = sq_obj.get("target_category", "SQL_RETRIEVAL")
+        else:
+            sq_text = getattr(sq_obj, "question", str(sq_obj))
+            category_hint = getattr(sq_obj, "target_category", "SQL_RETRIEVAL")
 
-# ─── 3. Main Agent Orchestrator ──────────────────────────────────────────
+        prompt = build_tool_selection_prompt(category_hint, relevant_schema)
+        
+        system_content = prompt
+        if raw_outputs:
+            system_content += f"\n\nContext from previous sub-questions analyzed just now: {raw_outputs}"
 
-import time
+        msgs = [{"role": "system", "content": system_content}]
+        
+        if chat_history:
+            clean_history = [
+                {"role": m["role"], "content": m.get("content", "")}
+                for m in chat_history[-4:]
+                if m["role"] != "system"
+            ]
+            msgs.extend(clean_history)
+            
+        msgs.append({"role": "user", "content": sq_text})
 
+        max_retries = 3
+        for attempt in range(max_retries):
+            allowed_names = CATEGORY_TOOLS.get(category_hint)
+            active_tools = (
+                [t for t in TOOLS if t["function"]["name"] in allowed_names]
+                if allowed_names else TOOLS
+            )
+
+            response = raw_client.chat.completions.create(
+                model=ModelConfig.ACTIVE_MODEL,
+                messages=msgs,
+                tools=active_tools,
+                timeout=20
+            )
+            track_tokens(response, context)
+            assistant_msg = response.choices[0].message.model_dump(exclude_none=True)
+            
+            if not assistant_msg.get("tool_calls"):
+                raw_outputs.append(f"Sub-question: {sq_text}\nAnswer: {_extract_text_content(response.choices[0].message)}")
+                break
+            
+            msgs.append(assistant_msg)
+            has_turn_error = False
+            
+            for tool_call in assistant_msg["tool_calls"]:
+                call_id = tool_call.get("id", "call_id")
+                tool_name = tool_call["function"]["name"]
+                
+                output_text, has_error, extracted_objects = execute_tool_call(tool_call, attempt, run_log, df_memory)
+                
+                if has_error:
+                    has_turn_error = True
+                else:
+                    current_turn_dfs.extend(extracted_objects)
+                    
+                msgs.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": tool_name,
+                    "content": output_text
+                })
+                
+            if not has_turn_error:
+                raw_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
+                break
+            elif attempt == max_retries - 1:
+                raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {max_retries} attempts.")
+        
+        routing_latencies[f"  ↳ Tool Exec {idx + 1}"] = round(time.perf_counter() - t0_sq, 2)
+
+    routing_latencies["2. Tool Routing & Execution"] = round(time.perf_counter() - t0_tools, 2)
+    return raw_outputs, current_turn_dfs, routing_latencies
+
+
+# ─── 3. Final Synthesis ──────────────────────────────────────────────────
+def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant_schema: dict, chat_history: List[dict], context: SessionContext, run_log: List[str]) -> str:
+    """
+    Compresses tool outputs if necessary and synthesizes the raw data back 
+    into a business-friendly final response for the user.
+    """
+    context_optimizer = context.context_optimizer
+    raw_outputs_str = str(raw_outputs)
+    
+    if context_optimizer.count_tokens(raw_outputs_str) > 20000:
+        raw_outputs_str = context_optimizer.compress_text(
+            raw_outputs_str, 
+            target_rate=0.5,
+            context_instruction="Preserve all numerical values, metric names, and tool error messages."
+        )
+
+    synthesis_prompt = f"""You are a data insights assistant. 
+    User's Original Prompt: {user_prompt}
+    Raw Data Extracted across all tools: {raw_outputs_str}
+    Relevant Schema: {json.dumps(relevant_schema)}
+    
+    Synthesize the raw data into a clear, business-friendly summary answering the original prompt.
+    If any tools failed or returned errors in the raw data, briefly mention what analysis could not be completed and why, alongside the successful insights.
+    Do not try and do math. If the user asked for a yearly total and you received monthly totals for the year, provide the monthly totals without attempting to sum them yourself.
+    
+    CRITICAL FORMATTING RULE: 
+    Do not use LaTeX formatting for regular text. When mentioning currency, you MUST escape the dollar sign (e.g., \\$10M) so it does not accidentally trigger markdown math blocks."""
+    
+    clean_messages = [{"role": m["role"], "content": m.get("content", "")} for m in chat_history]
+    final_msgs = clean_messages + [{"role": "user", "content": synthesis_prompt}]
+    
+    try:
+        response = raw_client.chat.completions.create(
+            model=ModelConfig.ACTIVE_MODEL,
+            messages=final_msgs,
+            timeout=20
+        )
+        track_tokens(response, context)
+        final_text = _extract_text_content(response.choices[0].message)
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        run_log.append(f"Synthesis Model Failed ({type(e).__name__}): {e}\n{error_trace}")
+        final_text = f"**⚠️ Synthesis Failed:** The synthesis model encountered an error.\n\n**Error ({type(e).__name__}):** {e}\n\n**Raw Extracted Data:**\n```text\n{raw_outputs_str[:2000]}...\n```"
+        
+    return final_text
+
+
+# ─── 4. Main Agent Orchestrator ──────────────────────────────────────────
 @mlflow.trace(name="run_agent_loop")
 def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionContext) -> Dict[str, Any]:
     """
@@ -318,17 +415,11 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
     Decoupled from UI: Takes history and context in, returns structured dictionary out.
     """
     run_log: List[str] = []
-    current_turn_dfs: List[Any] = []
     step_latencies: Dict[str, float] = {}
 
-    # ─── Resolve session-scoped objects from context ────────────────────
-    df_memory = context.df_memory
-    context_optimizer = context.context_optimizer
-    df_memory.clear()
-    
+    context.df_memory.clear()
     t_start_total = time.perf_counter()
 
-    # Capture token counts at the start of the turn from context
     start_input_tokens = context.input_tokens
     start_output_tokens = context.output_tokens
     start_total_tokens = context.total_tokens
@@ -363,142 +454,24 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
     
         mlflow.log_metric("cache_hit", 0)
 
+        # ─── 2. DECOMPOSITION & ROUTING ───
         t0 = time.perf_counter()
-        # Pass context into the helper functions
         relevant_schema = filter_schema(user_prompt, run_log=run_log, context=context)
-        sub_questions = decompose_question(user_prompt, relevant_schema, chat_history, run_log, context_optimizer, context=context)
+        sub_questions = decompose_question(user_prompt, relevant_schema, chat_history, run_log, context.context_optimizer, context=context)
         step_latencies["1. Decomposition"] = round(time.perf_counter() - t0, 2)
         run_log.append(f"Sub-questions identified: {sub_questions}")
         
-        # ─── 2. TOOL ROUTING & EXECUTION ───
-        t0_tools = time.perf_counter()
-        raw_outputs = []
-        for idx, sq_obj in enumerate(sub_questions):
-            t0_sq = time.perf_counter()
-            if isinstance(sq_obj, str):
-                sq_text = sq_obj
-                category_hint = "SQL_RETRIEVAL"
-            elif isinstance(sq_obj, dict):
-                sq_text = sq_obj.get("question", str(sq_obj))
-                category_hint = sq_obj.get("target_category", "SQL_RETRIEVAL")
-            else:
-                sq_text = getattr(sq_obj, "question", str(sq_obj))
-                category_hint = getattr(sq_obj, "target_category", "SQL_RETRIEVAL")
+        # ─── 3. TOOL EXECUTION ───
+        raw_outputs, current_turn_dfs, routing_latencies = execute_tool_routing(
+            sub_questions, relevant_schema, chat_history, context, run_log
+        )
+        step_latencies.update(routing_latencies)
 
-            prompt = build_tool_selection_prompt(category_hint, relevant_schema)
-            
-            # Build the system prompt, merging intra-turn context in so there is
-            # never more than one system message (Gemini rejects multiple system prompts).
-            system_content = prompt
-            if raw_outputs:
-                system_content += f"\n\nContext from previous sub-questions analyzed just now: {raw_outputs}"
-
-            msgs = [{"role": "system", "content": system_content}]
-            
-            if chat_history:
-                clean_history = [
-                    {"role": m["role"], "content": m.get("content", "")}
-                    for m in chat_history[-4:]
-                    if m["role"] != "system"
-                ]
-                msgs.extend(clean_history)
-                
-            msgs.append({"role": "user", "content": sq_text})
-
-            max_retries = 3
-            for attempt in range(max_retries):
-                # Filter the toolset to only the tools valid for this category.
-                # Falls back to the full toolset if the category isn't mapped
-                # (e.g. plain-string fallback path).
-                allowed_names = CATEGORY_TOOLS.get(category_hint)
-                active_tools = (
-                    [t for t in TOOLS if t["function"]["name"] in allowed_names]
-                    if allowed_names else TOOLS
-                )
-
-                response = raw_client.chat.completions.create(
-                    model=ModelConfig.ACTIVE_MODEL,
-                    messages=msgs,
-                    tools=active_tools,
-                    timeout = 20
-                )
-                track_tokens(response, context)
-                assistant_msg = response.choices[0].message.model_dump(exclude_none=True)
-                
-                if not assistant_msg.get("tool_calls"):
-                    raw_outputs.append(f"Sub-question: {sq_text}\nAnswer: {_extract_text_content(response.choices[0].message)}")
-                    break
-                
-                msgs.append(assistant_msg)
-                has_turn_error = False
-                
-                for tool_call in assistant_msg["tool_calls"]:
-                    call_id = tool_call.get("id", "call_id")
-                    tool_name = tool_call["function"]["name"]
-                    
-                    output_text, has_error, extracted_objects = execute_tool_call(tool_call, attempt, run_log, df_memory)
-                    
-                    if has_error:
-                        has_turn_error = True
-                    else:
-                        current_turn_dfs.extend(extracted_objects)
-                        
-                    msgs.append({
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "name": tool_name,
-                        "content": output_text
-                    })
-                    
-                if not has_turn_error:
-                    raw_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
-                    break
-                elif attempt == max_retries - 1:
-                    raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {max_retries} attempts.")
-            
-            # <--- RECORD SUB-QUESTION LATENCY HERE (at the bottom of the loop)
-            step_latencies[f"  ↳ Tool Exec {idx + 1}"] = round(time.perf_counter() - t0_sq, 2)
-
-        # Record the total routing execution time
-        step_latencies["2. Tool Routing & Execution"] = round(time.perf_counter() - t0_tools, 2)
-
-        # ─── 3. FINAL SYNTHESIS ───
+        # ─── 4. FINAL SYNTHESIS ───
         t0 = time.perf_counter()
-        raw_outputs_str = str(raw_outputs)
-        if context_optimizer.count_tokens(raw_outputs_str) > 20000:
-            raw_outputs_str = context_optimizer.compress_text(
-                raw_outputs_str, 
-                target_rate=0.5,
-                context_instruction="Preserve all numerical values, metric names, and tool error messages."
-            )
-
-        synthesis_prompt = f"""You are a data insights assistant. 
-        User's Original Prompt: {user_prompt}
-        Raw Data Extracted across all tools: {raw_outputs_str}
-        Relevant Schema: {json.dumps(relevant_schema)}
-        
-        Synthesize the raw data into a clear, business-friendly summary answering the original prompt.
-        If any tools failed or returned errors in the raw data, briefly mention what analysis could not be completed and why, alongside the successful insights.
-        Do not try and do math. If the user asked for a yearly total and you received monthly totals for the year, provide the monthyl totals without attempting to sum them yourself.
-        
-        CRITICAL FORMATTING RULE: 
-        Do not use LaTeX formatting for regular text. When mentioning currency, you MUST escape the dollar sign (e.g., \\$10M) so it does not accidentally trigger markdown math blocks."""
-        
-        clean_messages = [{"role": m["role"], "content": m.get("content", "")} for m in chat_history]
-        final_msgs = clean_messages + [{"role": "user", "content": synthesis_prompt}]
-        
-        try:
-            response = raw_client.chat.completions.create(
-                model=ModelConfig.ACTIVE_MODEL,
-                messages=final_msgs,
-                timeout=20
-            )
-            track_tokens(response, context)
-            final_text = _extract_text_content(response.choices[0].message)
-        except Exception as e:
-            error_trace = traceback.format_exc()
-            run_log.append(f"Synthesis Model Failed ({type(e).__name__}): {e}\n{error_trace}")
-            final_text = f"**⚠️ Synthesis Failed:** The synthesis model encountered an error.\n\n**Error ({type(e).__name__}):** {e}\n\n**Raw Extracted Data:**\n```text\n{raw_outputs_str[:2000]}...\n```"
+        final_text = synthesize_final_response(
+            user_prompt, raw_outputs, relevant_schema, chat_history, context, run_log
+        )
         step_latencies["3. Final Synthesis"] = round(time.perf_counter() - t0, 2)
         
         step_latencies["Total Execution"] = round(time.perf_counter() - t_start_total, 2)
@@ -506,7 +479,7 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
         turn_figures = [item for item in current_turn_dfs if isinstance(item, go.Figure)]
         turn_dfs = [item for item in current_turn_dfs if isinstance(item, pd.DataFrame)]
 
-        # ─── 4. MLFLOW TELEMETRY LOGGING ───
+        # ─── 5. MLFLOW TELEMETRY LOGGING ───
         turn_input_tokens = context.input_tokens - start_input_tokens
         turn_output_tokens = context.output_tokens - start_output_tokens
         turn_total_tokens = context.total_tokens - start_total_tokens
