@@ -14,7 +14,7 @@ from agent.cache import agent_cache
 from agent.categories import CATEGORY_REGISTRY, CATEGORY_TOOLS
 from agent.context import SessionContext
 from agent.schemas import DecomposedQuestions
-from toolkit import TOOLS, TOOL_DISPATCHER, CATEGORY_TOOLS
+from toolkit import TOOLS, TOOL_DISPATCHER
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call, ModelConfig, raw_client, track_tokens
 
 
