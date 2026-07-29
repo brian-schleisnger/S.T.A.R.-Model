@@ -37,7 +37,7 @@ CATEGORY_REGISTRY: dict[str, dict] = {
             "pivot_dataframe_tool": "reshape long-form tables into wide side by side format."
         }
     },
-    "Ratio_ANALYSIS": {
+    "RATIO_ANALYSIS": {
         "rule": "any question about CPA (cost per acquisition) or any ratio analysis that needs to be calculated",
         "tools": {
             "calculate_cpa_tool": "CPA, CLV, CLV:CPA ratio, marketing efficiency.",

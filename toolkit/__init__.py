@@ -64,7 +64,7 @@ TOOL_DISPATCHER = {
     "generate_barchart_tool": (generate_barchart_tool, generate_barchart_tool_Schema),
     "generate_histogram_tool": (generate_histogram_tool, generate_histogram_tool_Schema),
     "generate_linechart_tool": (generate_linechart_tool, generate_linechart_tool_Schema),
-    "calculate_unit_economics_tool": (calculate_cpa_tool, calculate_cpa_tool_Schema),
+    "calculate_cpa_tool": (calculate_cpa_tool, calculate_cpa_tool_Schema),
     "calculate_ratio_tool": (calculate_ratio_tool, calculate_ratio_tool_Schema),
     "run_scenario_planning_tool": (run_scenario_planning_tool, run_scenario_planning_tool_Schema),
     "execute_python_tool": (execute_python_tool, execute_python_tool_Schema),
