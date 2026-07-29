@@ -472,7 +472,9 @@ class pivot_dataframe_tool(BaseModel):
 
 class calculate_cpa_tool(BaseModel):
     """
-    marketing cost per acquistion (CPA) ratios by safely merging marketing spend and subcount tables. Use this whenever the user asks about unit economics, cost per acquisition, or marketing efficiency.
+    Used to calculate marketing cost per acquistion (CPA) ratio.
+    calculates three ratios: overall cpa, residential cpa, and residential non-caliber cpa.
+    use this whenever the user asks about cpas, sac per add, cost per acquisition, marketing efficiency, or other related terms.
     """
     marketing_where_clause: Optional[str] = Field(
         default=None, 

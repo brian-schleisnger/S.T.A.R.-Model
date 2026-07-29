@@ -234,44 +234,41 @@ def pivot_dataframe_tool(
 def calculate_cpa_tool(marketing_where_clause: str = None, subscriber_where_clause: str = None) -> dict:
     """
     Joins monthly marketing spend against monthly activation counts to compute
-    CPA (Cost Per Acquisition), CLV (Customer Lifetime Value via NPV of MCF), and
-    the CLV:CPA ratio for each month. Returns a blended summary and the merged
-    monthly DataFrame with all computed columns.
-
-    Uses MONTHLY_WACC and avg_churn to discount future cash flows for CLV.
-    Both where_clause params are applied independently to their respective tables
-    before the inner join, allowing independent filtering (e.g. by channel or segment).
+    Total Marketing CPA, Residential CPA, and Residential Non-Caliber CPA.
     """
-    # Kept as-is since the schema explicitly handles the two-table where clauses without a TABLE_NAME arg.
     try:
         # 1. Marketing Data
         df_mkt = _link_tables(
             tables='"sandbox"."dbs_marketing_sync"',
-            # Keep the quotes for Postgres, but drop the 'AS' alias
             columns=['"Year"', '"Month"', 'SUM("Amount") AS total_spend'], 
             where_clause=marketing_where_clause,
             group_by=['"Year"', '"Month"'],
             limit=None
         )
         
-        # Strip the quotes out of the resulting pandas column names if the driver leaves them in
         if not df_mkt.empty:
             df_mkt.columns = [col.replace('"', '') for col in df_mkt.columns]
 
-        # 2. Acquisition Data
+        # 2. Acquisition Data (Pivot long format to wide via conditional SQL aggregation)
         df_acq = _link_tables(
             tables='"sandbox"."subcount_data_synced"',
-            # Keep the quotes to protect the capital letters for Postgres
             columns=[
                 '"Year"', 
                 '"Month"', 
-                'SUM("Amount") AS total_activations'
+                'SUM(CASE WHEN "Metric" = \'Gross Adds\' THEN "Amount" ELSE 0 END) AS gross_adds',
+                'SUM(CASE WHEN "Metric" = \'Commercial Activations\' THEN "Amount" ELSE 0 END) AS commercial_activations',
+                'SUM(CASE WHEN "Metric" = \'Direct Activations\' THEN "Amount" ELSE 0 END) AS direct_activations',
+                'SUM(CASE WHEN "Metric" = \'National Retail Activations\' THEN "Amount" ELSE 0 END) AS national_retail',
+                'SUM(CASE WHEN "Metric" = \'Local Retail Activations\' THEN "Amount" ELSE 0 END) AS local_retail',
+                'SUM(CASE WHEN "Metric" = \'Sales Partner Activations\' THEN "Amount" ELSE 0 END) AS sales_partner',
+                'SUM(CASE WHEN "Metric" = \'Telco Activations\' THEN "Amount" ELSE 0 END) AS telco'
             ],
             where_clause=subscriber_where_clause,
             group_by=['"Year"', '"Month"'],
             limit=None
         )
 
+        # 3. Clean and Merge
         for df_tmp in [df_mkt, df_acq]:
             df_tmp['Year'] = pd.to_numeric(df_tmp['Year'], errors='coerce')
             df_tmp['Month'] = pd.to_numeric(df_tmp['Month'], errors='coerce')
@@ -279,10 +276,24 @@ def calculate_cpa_tool(marketing_where_clause: str = None, subscriber_where_clau
         df_merged = pd.merge(df_mkt, df_acq, on=['Year', 'Month'], how='inner')
 
         if df_merged.empty:
-            return {"text": "Error: Could not calculate UNit Economics. No overlapping months found.", "data": None}
+            return {"text": "Error: Could not calculate cpas. No overlapping months found.", "data": None}
 
-        df_merged['cpa'] = df_merged['total_spend'] / df_merged['total_activations']
+        # 4. Calculate Defined Denominators
+        df_merged['residential_activations'] = df_merged['gross_adds'] - df_merged['commercial_activations']
+        df_merged['residential_non_caliber_activations'] = (
+            df_merged['direct_activations'] + 
+            df_merged['national_retail'] + 
+            df_merged['local_retail'] + 
+            df_merged['sales_partner'] + 
+            df_merged['telco']
+        )
 
+        # 5. Calculate CPAs
+        df_merged['total_marketing_cpa'] = df_merged['total_spend'] / df_merged['gross_adds']
+        df_merged['residential_cpa'] = df_merged['total_spend'] / df_merged['residential_activations']
+        df_merged['residential_non_caliber_cpa'] = df_merged['total_spend'] / df_merged['residential_non_caliber_activations']
+
+        # 6. Formatting and Cleanup
         df_merged.replace([np.inf, -np.inf], np.nan, inplace=True)
         df_merged = df_merged.sort_values(by=['Year', 'Month'])
 
@@ -292,15 +303,22 @@ def calculate_cpa_tool(marketing_where_clause: str = None, subscriber_where_clau
             errors='coerce'
         )
 
+        # Overall blended numbers for the text output
         overall_spend = df_merged['total_spend'].sum()
-        overall_acq = df_merged['total_activations'].sum()
-        blended_cpa = overall_spend / overall_acq if overall_acq > 0 else 0
+        overall_gross = df_merged['gross_adds'].sum()
+        overall_res = df_merged['residential_activations'].sum()
+        overall_res_nc = df_merged['residential_non_caliber_activations'].sum()
+
+        blended_total = overall_spend / overall_gross if overall_gross > 0 else 0
+        blended_res = overall_spend / overall_res if overall_res > 0 else 0
+        blended_res_nc = overall_spend / overall_res_nc if overall_res_nc > 0 else 0
         
         text_output = (
             f"Unit Economics Summary:\n"
-            f"  • Total Marketing Spend Analyzed: ${overall_spend:,.2f}\n"
-            f"  • Total Activations: {overall_acq:,.0f}\n"
-            f"  • Blended CPA: ${blended_cpa:,.2f}\n"
+            f"  • Total Marketing Spend Analyzed: \\${overall_spend:,.2f}\n"
+            f"  • Total Marketing CPA: \\${blended_total:,.2f}\n"
+            f"  • Residential CPA: \\${blended_res:,.2f}\n"
+            f"  • Residential Non-Caliber CPA: \\${blended_res_nc:,.2f}\n"
         )
 
         return {"text": text_output, "data": df_merged}
