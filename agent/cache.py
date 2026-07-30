@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 # Import existing authentication and configuration from your base module
-from toolkit.base import get_auth_token, databricks_host
+from toolkit.base import get_auth_token, get_databricks_host
 
 # ─── Configuration ───────────────────────────────────────────────
 # Standard Databricks hosted embedding model
@@ -60,7 +60,7 @@ class SemanticCache:
         client = OpenAI(
             api_key=get_auth_token(),
             # Point to the AI Gateway as specified in the UI
-            base_url=f"{databricks_host}/ai-gateway/mlflow/v1" 
+            base_url=f"{get_databricks_host()}/ai-gateway/mlflow/v1"
         )
         response = client.embeddings.create(
             model=EMBEDDING_MODEL,

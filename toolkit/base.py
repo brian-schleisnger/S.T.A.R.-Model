@@ -16,7 +16,7 @@ import pg8000
 from pydantic import BaseModel
 import sqlalchemy as sa
 
-from .validators import validate_read_only_sql, extract_text_content, SecurityViolationError
+from .validators import validate_read_only_sql, _extract_text_content, SecurityViolationError
 from agent.context import SessionContext
 
 logger = logging.getLogger(__name__)
@@ -65,19 +65,34 @@ def calculate_cost(model_endpoint: str, input_tokens: int, output_tokens: int) -
         
 DATABRICKS_HOST = os.environ.get('DATABRICKS_HOST', '').rstrip('/')
 PGHOST = os.environ.get("PGHOST")
-PGDATABASE = "databricks_postgres" 
+PGDATABASE = "databricks_postgres"
 
-# Initialize the SDK Client
-w = WorkspaceClient()
-databricks_host = w.config.host
+
+@lru_cache(maxsize=1)
+def get_workspace_client() -> WorkspaceClient:
+    """
+    Returns the singleton Databricks WorkspaceClient, initialized lazily on first use.
+    Using @lru_cache means the SDK only authenticates once per process, but the module
+    can be safely imported in environments without Databricks credentials (e.g. tests,
+    local dev) without raising an error at import time.
+    """
+    return WorkspaceClient()
+
+
+def get_databricks_host() -> str:
+    """Returns the Databricks host URL, derived lazily from the SDK client config."""
+    return get_workspace_client().config.host
+
 
 # Single source of truth for the AI gateway base URL.
-# Update this one line if the endpoint path ever changes.
-DATABRICKS_AI_BASE_URL = f"{databricks_host}/ai-gateway/mlflow/v1"
+# Evaluated lazily so it doesn't trigger SDK auth at import time.
+def _get_ai_base_url() -> str:
+    return f"{get_databricks_host()}/ai-gateway/mlflow/v1"
+
 
 def get_auth_token() -> str:
     """Dynamically fetches a fresh token from the Databricks SDK on every call."""
-    auth_headers = w.config.authenticate()
+    auth_headers = get_workspace_client().config.authenticate()
     return auth_headers["Authorization"].split(" ")[1]
 
 def _make_fresh_openai_client() -> OpenAI:
@@ -89,7 +104,7 @@ def _make_fresh_openai_client() -> OpenAI:
     """
     return OpenAI(
         api_key=get_auth_token(),
-        base_url=DATABRICKS_AI_BASE_URL,
+        base_url=_get_ai_base_url(),
         max_retries=0
     )
 
@@ -172,7 +187,7 @@ SCHEMA_CONFIG = {
     '"sandbox"."sales_data_sync"': "sales_dictionary.json",
     '"sandbox"."dbspl_sync"': "dish_pl_dictionary.json"
 }
-
+'''
 ALIASES = {
     '"sandbox"."acquisition_data_v3"': ['MOonthly cash flow', 'sac', 'subscribers', 'per-customer', 'economic', 'mcf', 'npv', 'subscriber acquisition cost', 'lifetime value', 'clv'],
     '"sandbox"."dbs_marketing_sync"': ['marketing', 'spend', 'budget', 'cpa', 'tactic', 'digital', 'tv', 'cost per acquisition', 'ad spend', 'campaign', 'media', 'advertising'],
@@ -180,6 +195,7 @@ ALIASES = {
     '"sandbox"."sales_data_sync"': ['sales','buyers remorse','brm', 'calls','selling'],
     '"sandbox"."dbspl_sync"': ['p&l','p/l','income statement','i/s','profit and loss','arpu','cogs','totals','revenue','cogs','operating income','oibda']
 }
+#'''
 
 DATA_DICTIONARY = {}
 
@@ -192,9 +208,7 @@ for table_name, file_name in SCHEMA_CONFIG.items():
         with dict_path.open("r", encoding="utf-8") as f:
             schema_data = json.load(f)
             schema_data["table_name"] = table_name
-            schema_data["related_concepts"] = ALIASES.get(table_name, [])
             DATA_DICTIONARY[table_name] = schema_data
-    # Replace the old try/except block with this:
     except Exception as e:
         logger.error(f"Error loading schema {file_name}: {e}")
 
@@ -212,7 +226,7 @@ def get_db_engine():
     def get_fresh_connection():
         """Creates a new pg8000 connection with a freshly fetched auth token."""
         fresh_token = get_auth_token()
-        current_user = w.current_user.me().user_name
+        current_user = get_workspace_client().current_user.me().user_name
         return pg8000.connect(
             user=current_user,
             password=fresh_token,
@@ -238,22 +252,6 @@ def _is_gpt_model(model_name: str) -> bool:
     """Returns True if the endpoint name indicates a GPT model (OpenAI-native tool-calling)."""
     return "gpt" in model_name.lower()
 
-
-def _extract_text_content(message) -> str:
-    """
-    Safely extracts the text string from a ChatCompletionMessage regardless of
-    whether content is a plain string or a Gemini-style list of content blocks
-    (e.g. [{'type': 'text', 'text': '...', 'thoughtSignature': '...'}]).
-    """
-    content = message.content
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        # Grab the first block with type='text' and return its text value
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                return block.get("text", "")
-    return str(content)
 
 
 def llm_call(

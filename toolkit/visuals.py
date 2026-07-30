@@ -174,7 +174,8 @@ def generate_histogram_tool(
     dataframe_id: Optional[str] = None,
     n_bins: Optional[int] = None, 
     category_column: Optional[str] = None, 
-    where_clause: Optional[str] = None
+    where_clause: Optional[str] = None,
+    df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
     Generates a Plotly histogram with a box-plot marginal for x_column.
@@ -183,7 +184,7 @@ def generate_histogram_tool(
     Non-numeric and null values are dropped before plotting.
     """
     try:
-        df, x_col, _, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, None, category_column, where_clause)
+        df, x_col, _, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, None, category_column, where_clause, df_memory=df_memory)
         
         df[x_col] = pd.to_numeric(df[x_col], errors='coerce')
         df = df.dropna(subset=[x_col])

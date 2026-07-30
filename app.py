@@ -259,12 +259,12 @@ col1, col2, col3 = st.columns(3)
 with col1:
     with st.container(border=True):
         st.markdown("#### Marketing Spend <span class='status-badge'>● Connected</span>", unsafe_allow_html=True)
-        st.markdown("**Seperated Monthly by Tactic and Sub-Tactic**")
+        st.markdown("**Separated Monthly by Tactic and Sub-Tactic**")
         st.caption("Source: FCG (01/2021 - 05/2026)")
 
     with st.container(border=True):
         st.markdown("#### Sales <span class='status-badge'>● Connected</span>", unsafe_allow_html=True)
-        st.markdown("**Daily calls, sales, direct adds, and buyers remorse**")
+        st.markdown("**Daily calls, sales, direct adds, and buyer's remorse**")
         st.caption("Source: B.I. & Performance Optimization team (01/2019 - 06/2026)")
 
 with col2:
@@ -281,7 +281,7 @@ with col2:
 with col3:
     with st.container(border=True):
         st.markdown("#### Individual Subscriber <span class='status-badge'>● Connected</span>", unsafe_allow_html=True)
-        st.markdown("**Per-customer demographics, sales chanel, package, sac attributions, and estimated future values**")
+        st.markdown("**Per-customer demographics, sales channel, package, sac attributions, and estimated future values**")
         st.caption("Source: FS2 Economic Data (10/2018 - 03/2026)")
 
 st.markdown("</div>", unsafe_allow_html=True)

@@ -230,7 +230,7 @@ def pivot_dataframe_tool(
 
 
 # ─── Ratio Analysis Tools ───────────────────────────────────────────
-@mlflow.trace(name="calculate_unit_economics_tool")
+@mlflow.trace(name="calculate_cpa_tool")
 def calculate_cpa_tool(marketing_where_clause: str = None, subscriber_where_clause: str = None) -> dict:
     """
     Joins monthly marketing spend against monthly activation counts to compute

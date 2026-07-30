@@ -436,6 +436,8 @@ def run_optimization_tool(
             
             # 3. Return the DataFrame in the "data" key instead of None
             return {"text": result_text, "data": df_results, "model": res}
+        else:
+            return {"text": f"Optimization Infeasible: {res.message}", "data": None, "model": None}
         
     except Exception as e:
         return {"text": f"Optimization Error: {str(e)}", "data": None, "model": None}

@@ -111,7 +111,7 @@ def validate_read_only_sql(query: str) -> None:
 
 # --- General Content Extractors ---
 
-def extract_text_content(message) -> str:
+def _extract_text_content(message) -> str:
     """
     Safely extracts the text string from a ChatCompletionMessage regardless of
     whether content is a plain string or a Gemini-style list of content blocks.

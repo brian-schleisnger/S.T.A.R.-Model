@@ -170,7 +170,7 @@ def decompose_question(user_prompt: str,
     
 
 # ─── 2. Tool Execution & Routing Engine ──────────────────────────────────
-def build_tool_selection_prompt(category_hint: str, relevant_schema: dict) -> str:
+def build_tool_selection_prompt(category_hint: str, relevant_schema: dict, context: SessionContext = None) -> str:
     """Builds the system prompt for the tool-selection LLM call."""
     prompt_lines = [
         "You are a tool-selection assistant. Your only job is to call the right tool for the sub-question below.\n",
@@ -182,17 +182,19 @@ def build_tool_selection_prompt(category_hint: str, relevant_schema: dict) -> st
     for cat, data in CATEGORY_REGISTRY.items():
         tool_descriptions = [f"{tool_name} ({desc})" for tool_name, desc in data["tools"].items()]
         prompt_lines.append(f"{cat:<22} → {', '.join(tool_descriptions)}")
-        
+
+    # Inject cross-turn memory summary so the LLM can reuse previously pulled data
+    memory_summary = context.get_memory_summary() if context else "No data currently in memory from previous turns."
     prompt_lines.extend([
-        "\nDATA MEMORY: if a previous step saved data and returned an ID (e.g. df_a1b2c3), pass it as "
-        "dataframe_id instead of re-querying the database.\n",
+        f"\nDATA MEMORY: {memory_summary}",
+        "If a dataframe_id above matches what this sub-question needs, pass it directly instead of re-querying the database.\n",
         f"Use this exact schema for all column names: {json.dumps(relevant_schema)}"
     ])
     
     return "\n".join(prompt_lines)
 
 
-def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str], df_memory: Any) -> Tuple[str, bool, List[Any]]:
+def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str], df_memory: Any, context: SessionContext = None) -> Tuple[str, bool, List[Any]]:
     """Handles parsing, Pydantic validation, and execution of a single tool call with timeout."""
     tool_name = tool_call["function"]["name"]
     extracted_objects = []
@@ -252,6 +254,17 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
                 df_id = df_memory.save_df(result["data"])
                 output_text += f"\n[System Note: Data saved to Python memory with ID: {df_id}]"
                 extracted_objects.append(result["data"])
+
+                # Register this DataFrame in the persistent cross-turn memory summary
+                if context is not None:
+                    # Build a short human-readable label from the tool name and its key args
+                    label_parts = [tool_name.replace("_tool", "")]
+                    for key in ("TABLE_NAME", "target_variable", "x_column", "dataframe_id"):
+                        val = clean_args.get(key)
+                        if val:
+                            label_parts.append(str(val) if not isinstance(val, list) else ", ".join(val))
+                            break
+                    context.register_df(df_id, " | ".join(label_parts))
                 
             for key in ["model", "figure"]:
                 if result.get(key) is not None:
@@ -300,7 +313,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
             sq_text = getattr(sq_obj, "question", str(sq_obj))
             category_hint = getattr(sq_obj, "target_category", "SQL_RETRIEVAL")
 
-        prompt = build_tool_selection_prompt(category_hint, relevant_schema)
+        prompt = build_tool_selection_prompt(category_hint, relevant_schema, context)
         
         system_content = prompt
         if raw_outputs:
@@ -347,7 +360,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 call_id = tool_call.get("id", "call_id")
                 tool_name = tool_call["function"]["name"]
                 
-                output_text, has_error, extracted_objects = execute_tool_call(tool_call, attempt, run_log, df_memory)
+                output_text, has_error, extracted_objects = execute_tool_call(tool_call, attempt, run_log, df_memory, context)
                 
                 if has_error:
                     has_turn_error = True
@@ -433,7 +446,8 @@ def run_agent_loop(user_prompt: str, chat_history: List[dict], context: SessionC
     run_log: List[str] = []
     step_latencies: Dict[str, float] = {}
 
-    context.df_memory.clear()
+    # Do NOT clear df_memory here — DataFrames persist across turns so the LLM
+    # can reference data from previous prompts via dataframe_id.
     t_start_total = time.perf_counter()
 
     start_input_tokens = context.input_tokens
