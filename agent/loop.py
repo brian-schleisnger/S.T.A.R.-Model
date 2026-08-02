@@ -136,13 +136,13 @@ def decompose_question(user_prompt: str,
                        ) -> List[str]:
     """Breaks the user's prompt into specific data questions using chat history."""
     history_text = context_optimizer.format_history_for_prompt(history, max_tokens=50000)
+    dataframe_memory = context.get_memory_summary()
     
     prompt = f"""You are a data strategist. Break the user's broad request down into specific, actionable sub-questions, and assign each one the correct category.
     
     Available Data Schema: {json.dumps(schema)}
     
-    Recent Conversation History:
-    {history_text}
+    Recent Conversation History: {history_text}
     
     User Request: {user_prompt}
 
@@ -236,9 +236,9 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(func, **clean_args)
             try:
-                result = future.result(timeout=30.0)
+                result = future.result(timeout=90.0)
             except concurrent.futures.TimeoutError:
-                error_msg = f"Error: Tool '{tool_name}' timed out after 30 seconds. Execution aborted."
+                error_msg = f"Error: Tool '{tool_name}' timed out after 90 seconds. Execution aborted."
                 run_log.append(error_msg)
                 return error_msg, True, []
         
@@ -342,7 +342,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
             response = llm_call(
                 messages=msgs, 
                 tools=active_tools, 
-                timeout=20, 
+                timeout=25, 
                 model_name=active_model, 
                 context=context
             )
