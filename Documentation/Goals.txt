@@ -3,3 +3,4 @@ The things I'm looking to add/update, roughly in the order in which I'm trying t
 2. Connect the project to actual post-acquisition customer data, either by the redshift tables with some kind of service account or through talking to Kyle/Ryan/Zach's team about connecting to their data.
 4. Make the visualizations better
 5. what-if scenario better
+6. add in unstructured data telling us what retail prices have been over the past years 
