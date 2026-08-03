@@ -41,51 +41,52 @@ class SemanticCache:
 
     def _init_db(self):
         """
-        Ensures the pgvector extension, the cache table, and the IVFFlat index
-        all exist.  Runs once at startup against the shared Postgres engine from
-        base.py.  Safe to call repeatedly (all DDL uses IF NOT EXISTS).
+        Verifies that star_semantic_cache exists and is reachable.
+
+        The table and IVFFlat index must be created once by an admin from the
+        Lakebase SQL Editor before the app starts.  The app user only needs
+        SELECT / INSERT / UPDATE / DELETE on the table — no DDL privileges.
+
+        Setup SQL (run once as admin):
+        -----------------------------------------------------------------------
+        CREATE EXTENSION IF NOT EXISTS vector;
+
+        CREATE TABLE IF NOT EXISTS star_semantic_cache (
+            id             SERIAL PRIMARY KEY,
+            prompt         TEXT UNIQUE,
+            embedding      vector(1024),
+            final_text     TEXT,
+            dfs_pickle     BYTEA,
+            figures_pickle BYTEA,
+            timestamp      FLOAT
+        );
+
+        CREATE INDEX IF NOT EXISTS cache_embedding_idx
+            ON star_semantic_cache
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 10);
+
+        GRANT SELECT, INSERT, UPDATE, DELETE
+            ON star_semantic_cache TO <your_app_user>;
+        -----------------------------------------------------------------------
         """
         engine = get_db_engine()
-        with engine.begin() as conn:
-            # Probe for the vector type directly — more reliable than
-            # pg_extension on managed Databricks Postgres, where the extension
-            # may be pre-loaded without a pg_extension row.
-            type_row = conn.execute(
-                sa.text("SELECT typname FROM pg_type WHERE typname = 'vector' LIMIT 1")
-            ).fetchone()
-            if type_row is None:
-                # Extension is genuinely absent — surface a clear error so an
-                # admin knows exactly what to run.
+        with engine.connect() as conn:
+            row = conn.execute(sa.text("""
+                SELECT 1
+                FROM   information_schema.tables
+                WHERE  table_name = 'star_semantic_cache'
+                LIMIT  1
+            """)).fetchone()
+
+            if row is None:
                 raise RuntimeError(
-                    "pgvector extension is not available on this Postgres instance. "
-                    "A Databricks admin needs to run: CREATE EXTENSION vector; "
-                    "against the 'databricks_postgres' database."
+                    "Cache table 'star_semantic_cache' not found. "
+                    "Run the setup SQL in the Lakebase SQL Editor first "
+                    "(see the docstring in SemanticCache._init_db for the full script)."
                 )
 
-            # Main cache table — prompt is the natural unique key
-            conn.execute(sa.text(f"""
-                CREATE TABLE IF NOT EXISTS star_semantic_cache (
-                    id            SERIAL PRIMARY KEY,
-                    prompt        TEXT UNIQUE,
-                    embedding     vector({EMBEDDING_DIM}),
-                    final_text    TEXT,
-                    dfs_pickle    BYTEA,
-                    figures_pickle BYTEA,
-                    timestamp     FLOAT
-                )
-            """))
-
-            # IVFFlat ANN index for cosine similarity search.
-            # lists=10 is appropriate for a small-to-medium cache; tune upward
-            # as the table grows (rule of thumb: lists ≈ sqrt(row_count)).
-            conn.execute(sa.text("""
-                CREATE INDEX IF NOT EXISTS cache_embedding_idx
-                    ON star_semantic_cache
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 10)
-            """))
-
-        logger.info("SemanticCache: Postgres table and IVFFlat index verified.")
+        logger.info("SemanticCache: star_semantic_cache table verified.")
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """
