@@ -23,9 +23,6 @@ from .base import TABLE_DIMENSIONS
 from .transformations import _link_tables
 
 
-YEARLY_WACC = 0.1
-MONTHLY_WACC = (1 + YEARLY_WACC) ** (1 / 12) - 1
-
 __all__ = [
     "run_ols_regression_tool",
     "run_forecasting_tool",
@@ -37,6 +34,18 @@ __all__ = [
     "run_optimization_tool",
     "calculate_mutual_information_tool",
 ]
+
+
+YEARLY_WACC = 0.1
+MONTHLY_WACC = (1 + YEARLY_WACC) ** (1 / 12) - 1
+max_rows = 100000
+min_rows = 10
+scenario_min_rows = 3
+Random_state = 42
+split = .2
+Max_depth = 10
+max_iterations = 500
+rf_min_leaf_size = 3
 
 
 # ─── Statistical Tools ───────────────────────────────────────────
@@ -63,7 +72,7 @@ def calculate_mutual_information_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=100000)
+            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=max_rows)
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
 
@@ -106,7 +115,7 @@ def calculate_mutual_information_tool(
         # Drop rows where numeric features are missing
         df = df.dropna(subset=[target_variable] + current_features)
 
-        if len(df) < 10:
+        if len(df) < min_rows:
             return {"text": "Error: Data size too small after cleaning to calculate reliable mutual information.", "data": None}
 
         # ── 5. Calculate Mutual Information ──────────────────────────────
@@ -114,9 +123,9 @@ def calculate_mutual_information_tool(
         y = df[target_variable]
 
         if task == "continuous":
-            mi_scores = mutual_info_regression(X, y, discrete_features=discrete_mask, random_state=42)
+            mi_scores = mutual_info_regression(X, y, discrete_features=discrete_mask, random_state=Random_state)
         else:
-            mi_scores = mutual_info_classif(X, y, discrete_features=discrete_mask, random_state=42)
+            mi_scores = mutual_info_classif(X, y, discrete_features=discrete_mask, random_state=Random_state)
 
         # ── 6. Format Outputs ────────────────────────────────────────────
         mi_results = sorted(
@@ -160,7 +169,7 @@ def run_kmeans_clustering_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "model": None}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, columns=feature_variables, random_order=True, limit=100000)
+            df = _link_tables(TABLE_NAME, columns=feature_variables, random_order=True, limit=max_rows)
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "model": None}
             
@@ -178,7 +187,7 @@ def run_kmeans_clustering_tool(
         scaler = StandardScaler()
         scaled_data = scaler.fit_transform(df)
         
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
+        kmeans = KMeans(n_clusters=n_clusters, random_state=Random_state, n_init='auto')
         kmeans.fit(scaled_data)
         
         df['Cluster'] = kmeans.labels_
@@ -227,7 +236,7 @@ def run_ols_regression_tool(
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None}
         elif TABLE_NAME:
             # <-- PASS IT TO LINK_TABLES HERE
-            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, where_clause=where_clause, limit=100000) 
+            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, where_clause=where_clause, limit=max_rows) 
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None}
             
@@ -277,12 +286,12 @@ def run_pca_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "model": None}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, columns=feature_variables, random_order=True, limit=100000)
+            df = _link_tables(TABLE_NAME, columns=feature_variables, random_order=True, limit=max_rows)
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "model": None}
             
-        if df.empty or len(df) < 2:
-            return {"text": "Error: Not enough data points fetched to perform PCA.", "model": None}
+        if df.empty or len(df) < min_rows:
+            return {"text": f"Error: Not enough data points fetched to perform PCA (minimum {min_rows} required).", "model": None}
             
         df = df[[col for col in feature_variables if col in df.columns]]
         df = pd.get_dummies(df, columns=[col for col in df.columns if df[col].dtype == 'object'], drop_first=True)
@@ -336,7 +345,7 @@ def run_neural_network_tool(
     TABLE_NAME: Optional[Union[str, List[str]]] = None,
     dataframe_id: Optional[str] = None,
     hidden_layer_sizes: List[int] = [100, 50],
-    max_iter: int = 500,
+    max_iter: int = max_iterations,
     df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
@@ -352,7 +361,7 @@ def run_neural_network_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None, "model": None}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, random_order=True, limit=100000)
+            df = _link_tables(TABLE_NAME, random_order=True, limit=max_rows)
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None, "model": None}
             
@@ -362,19 +371,19 @@ def run_neural_network_tool(
         
         X = pd.get_dummies(X, drop_first=True)
         
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=split, random_state=Random_state)
         
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
         X_test_scaled = scaler.transform(X_test)
         
         if task_type == 'regression':
-            model = MLPRegressor(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=42)
+            model = MLPRegressor(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=Random_state)
             model.fit(X_train_scaled, y_train)
             score = model.score(X_test_scaled, y_test)
             result_text = f"MLP Regression completed.\nTarget: {target_variable}\nR^2 Score on test set: {score:.4f}"
         else:
-            model = MLPClassifier(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=42)
+            model = MLPClassifier(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=Random_state)
             model.fit(X_train_scaled, y_train)
             score = model.score(X_test_scaled, y_test)
             result_text = f"MLP Classification completed.\nTarget: {target_variable}\nAccuracy on test set: {score:.4f}"
@@ -464,7 +473,7 @@ def run_random_forest_tool(
             if df is None:
                 return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "model": None}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=100000)
+            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=max_rows)
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "model": None}
 
@@ -488,7 +497,7 @@ def run_random_forest_tool(
             df[target_variable] = df[target_variable].astype(str)
 
         df = df.dropna(subset=[target_variable])
-        if len(df) < 10:
+        if len(df) < min_rows:
             return {"text": "Error: Not enough valid target rows to train a model.", "model": None}
 
         # ── 4. Feature Encoding ──
@@ -504,7 +513,7 @@ def run_random_forest_tool(
         current_features = [col for col in df.columns if col != target_variable]
         df = df.dropna(subset=[target_variable] + current_features)
 
-        if len(df) < 10:
+        if len(df) < min_rows:
             return {"text": "Error: Data size too small after cleaning.", "model": None}
 
         # ── 5. Train / Test Split ──
@@ -512,14 +521,14 @@ def run_random_forest_tool(
         y = df[target_variable]
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
+            X, y, test_size=split, random_state=Random_state
         )
 
         # ── 6. Model Fitting & Evaluation ──
         if task == "regression":
             model = RandomForestRegressor(
-                n_estimators=n_estimators, max_depth=7,
-                min_samples_leaf=3, random_state=42, n_jobs=-1
+                n_estimators=n_estimators, max_depth=Max_depth,
+                min_samples_leaf=rf_min_leaf_size, random_state=Random_state, n_jobs=-1
             )
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
@@ -543,8 +552,8 @@ def run_random_forest_tool(
             )
         else:
             model = RandomForestClassifier(
-                n_estimators=n_estimators, max_depth=7,
-                min_samples_leaf=3, random_state=42, n_jobs=-1
+                n_estimators=n_estimators, max_depth=Max_depth,
+                min_samples_leaf=rf_min_leaf_size, random_state=Random_state, n_jobs=-1
             )
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
@@ -684,8 +693,8 @@ def run_forecasting_tool(
         df["target_value"] = pd.to_numeric(df.get("target_value", pd.Series(dtype=float)), errors="coerce")
         df = df.dropna(subset=["target_value"])
 
-        if df.empty or len(df) < 10:
-            return {"text": "Error: Not enough historical data points (minimum 10 required) to perform ARIMA.", "data": None}
+        if df.empty or len(df) < min_rows:
+            return {"text": f"Error: Not enough historical data points (minimum {min_rows} required) to perform ARIMA.", "data": None}
 
         series = df["target_value"].values
 
@@ -760,7 +769,7 @@ def run_scenario_planning_tool(
                 columns=all_columns, 
                 where_clause=where_clause,
                 random_order=True, 
-                limit=100000
+                limit=max_rows
             )
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None, "model": None}
@@ -778,8 +787,8 @@ def run_scenario_planning_tool(
             df[col] = pd.to_numeric(df[col], errors='coerce')
         df = df.dropna(subset=all_columns)
         
-        if df.empty or len(df) <= len(all_features) + 3:
-            return {"text": "Error: Not enough data points to build a reliable scenario model.", "data": None, "model": None}
+        if df.empty or len(df) <= len(all_features) + scenario_min_rows:
+            return {"text": f"Error: Not enough data points to build a reliable scenario model (minimum {scenario_min_rows} required).", "data": None, "model": None}
             
         # 3. Fit OLS Model
         historical_target_mean = df[target_variable].mean()

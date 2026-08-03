@@ -18,6 +18,15 @@ from toolkit import TOOLS, TOOL_DISPATCHER
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call
 
 
+Text_history_token_Limit = 50000
+Text_history_chat_limit = 4
+raw_output_token_limit = 20000
+compression_target_rate = 0.5
+Tool_timeout = 90
+Llm_timeout = 25
+Max_retries = 3
+
+
 # ─── 1. Context & Schema Helpers ─────────────────────────────────────────
 def filter_schema(user_prompt: str, run_log: List[str] = None, context: SessionContext = None) -> dict:
     """
@@ -135,7 +144,7 @@ def decompose_question(user_prompt: str,
                        context: SessionContext = None
                        ) -> List[str]:
     """Breaks the user's prompt into specific data questions using chat history."""
-    history_text = context_optimizer.format_history_for_prompt(history, max_tokens=50000)
+    history_text = context_optimizer.format_history_for_prompt(history, max_tokens=Text_history_token_Limit)
     dataframe_memory = context.get_memory_summary()
     
     prompt = f"""You are a data strategist. Break the user's broad request down into specific, actionable sub-questions, and assign each one the correct category.
@@ -236,9 +245,9 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(func, **clean_args)
             try:
-                result = future.result(timeout=90.0)
+                result = future.result(timeout=Tool_timeout)
             except concurrent.futures.TimeoutError:
-                error_msg = f"Error: Tool '{tool_name}' timed out after 90 seconds. Execution aborted."
+                error_msg = f"Error: Tool '{tool_name}' timed out after {Tool_timeout} seconds. Execution aborted."
                 run_log.append(error_msg)
                 return error_msg, True, []
         
@@ -324,14 +333,13 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
         if chat_history:
             clean_history = [
                 {"role": m["role"], "content": m.get("content", "")}
-                for m in chat_history[-4:]
+                for m in chat_history[-Text_history_chat_limit:]
                 if m["role"] != "system"
             ]
             msgs.extend(clean_history)
             
         msgs.append({"role": "user", "content": sq_text})
 
-        max_retries = 3
         for attempt in range(max_retries):
             allowed_names = CATEGORY_TOOLS.get(category_hint)
 
@@ -348,7 +356,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
             response = llm_call(
                 messages=msgs, 
                 tools=active_tools, 
-                timeout=25, 
+                timeout=Llm_timeout, 
                 model_name=active_model, 
                 context=context
             )
@@ -384,8 +392,8 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 })
                 
             # Log catastrophic failure only if the final attempt also failed
-            if attempt == max_retries - 1 and has_turn_error:
-                raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {max_retries} attempts.")
+            if attempt == Max_retries - 1 and has_turn_error:
+                raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {Max_retries} attempts.")
         
         routing_latencies[f"  ↳ Tool Exec {idx + 1}"] = round(time.perf_counter() - t0_sq, 2)
 
@@ -402,10 +410,10 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
     context_optimizer = context.context_optimizer
     raw_outputs_str = str(raw_outputs)
     
-    if context_optimizer.count_tokens(raw_outputs_str) > 20000:
+    if context_optimizer.count_tokens(raw_outputs_str) > raw_output_token_limit:
         raw_outputs_str = context_optimizer.compress_text(
             raw_outputs_str, 
-            target_rate=0.5,
+            target_rate=compression_target_rate,
             context_instruction="Preserve all numerical values, metric names, and tool error messages."
         )
 
@@ -431,7 +439,7 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
     try:
         response = llm_call(
             messages=final_msgs, 
-            timeout=20, 
+            timeout=Llm_timeout, 
             model_name=active_model, 
             context=context
         )

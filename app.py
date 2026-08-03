@@ -50,7 +50,7 @@ MLFLOW_EXPERIMENT_PATH = os.environ.get(
 
 # ─── 1. ENVIRONMENT BOOTSTRAPPING (CACHED) ───────────────────────────────
 @st.cache_resource
-def bootstrap_environment() -> None:
+def set_environment() -> None:
     """
     Runs offline caching, PyTorch CPU workarounds, and wheel installations exactly ONCE 
     per server lifecycle, preventing Streamlit from re-running them on every UI interaction.
@@ -117,7 +117,7 @@ def bootstrap_environment() -> None:
     print("Environment bootstrap complete!")
 
 # Execute bootstrap immediately before importing heavy ML/agent modules
-bootstrap_environment()
+set_environment()
 
 
 # ─── 2. AGENT & TOOLKIT IMPORTS ──────────────────────────────────────────
@@ -125,6 +125,7 @@ from agent.loop import run_agent_loop
 from agent.cache import agent_cache
 from agent.context import SessionContext
 from toolkit.base import AVAILABLE_MODELS
+
 
 # ─── 3. GLOBAL CONFIGURATION & UI HELPERS ────────────────────────────────
 # Set MLflow experiment once globally so it doesn't fire API calls on every chat turn
