@@ -694,7 +694,7 @@ def run_forecasting_tool(
         df = df.dropna(subset=["target_value"])
 
         if df.empty or len(df) < min_rows:
-            return {"text": f"Error: Not enough historical data points (minimum {min_rows} required) to perform ARIMA.", "data": None}
+            return {"text": f"Error: Not enough historical data points (minimum {min_rows} required) to perform projections.", "data": None}
 
         series = df["target_value"].values
 

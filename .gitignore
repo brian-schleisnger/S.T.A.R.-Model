@@ -15,6 +15,9 @@ env/
 # Streamlit
 .streamlit/secrets.toml
 
+# SQLite / local DB artifacts (cache migrated to Postgres)
+*.db
+
 # OS
 .DS_Store
 Thumbs.db
