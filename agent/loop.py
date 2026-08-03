@@ -417,6 +417,8 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
     Synthesize the raw data into a clear, business-friendly summary answering the original prompt.
     If any tools failed or returned errors in the raw data, briefly mention what analysis could not be completed and why, alongside the successful insights.
     Do not try and do math. If the user asked for a yearly total and you received monthly totals for the year, provide the monthly totals without attempting to sum them yourself.
+
+    Don't ever say the word forecast, call it a computer projection if needed. 
     
     CRITICAL FORMATTING RULE: 
     Do not use LaTeX formatting for regular text. When mentioning currency, you MUST escape the dollar sign (e.g., \\$10M) so it does not accidentally trigger markdown math blocks."""
