@@ -582,6 +582,7 @@ def run_forecasting_tool(
     value_column: str, 
     TABLE_NAME: Optional[Union[str, List[str]]] = None,
     dataframe_id: Optional[str] = None,
+    where_clause: Optional[str] = None,
     aggregation: str = "SUM", 
     steps: int = 6,
     trend: str = "add",      # 'add' or 'mul'
@@ -631,8 +632,6 @@ def run_forecasting_tool(
                 return {"text": f"Error: Column '{val_col_clean}' not found in the provided dataframe. Available columns: {df.columns.tolist()}", "data": None}
 
         elif TABLE_NAME:
-            # Resolve the canonical year/month column names for this table from TABLE_DIMENSIONS.
-            # Normalize TABLE_NAME to a single string key for the lookup.
             table_key = TABLE_NAME if isinstance(TABLE_NAME, str) else TABLE_NAME[0]
             dims = TABLE_DIMENSIONS.get(table_key)
 
@@ -641,16 +640,21 @@ def run_forecasting_tool(
 
             year_col = dims["year"]
             month_col = dims["month"]
+            
+            # Combine the hardcoded date requirement with the user's where_clause
+            base_where = f'"{year_col}" IS NOT NULL AND "{month_col}" IS NOT NULL'
+            final_where = f'({base_where}) AND ({where_clause})' if where_clause else base_where
 
             columns_to_fetch = [
                 f'"{year_col}"',
                 f'"{month_col}"',
                 f'{agg_func}({safe_value}) AS target_value'
             ]
+            
             df = _link_tables(
                 tables=TABLE_NAME,
                 columns=columns_to_fetch,
-                where_clause=f'"{year_col}" IS NOT NULL AND "{month_col}" IS NOT NULL',
+                where_clause=final_where,
                 group_by=[year_col, month_col],
                 order_by=f'"{year_col}" ASC, "{month_col}" ASC',
                 limit=None

@@ -265,10 +265,9 @@ class run_forecasting_tool(BaseModel):
     (e.g., acquisition_data_v3, dbs_marketing_sync, subcount_data_synced).
     Use this when the user asks to predict or forecast future values based on historical trends.
 
-    NOTE: For subcount_data_synced, filter to a single Metric and Row_Type via a prior
-    execute_sql_query_tool call and pass the dataframe_id, since the table has multiple
-    metric rows per month that must be isolated before forecasting.
-
+    NOTE: For tables with multiple metric rows per month (like subcount_data_synced), use where_clause 
+    to filter to a single Metric and Row_Type, or filter via a prior execute_sql_query_tool call and pass the dataframe_id.
+    
     MODEL PARAMETER GUIDE:
     - trend / seasonal: use 'add' (additive) when seasonal swings are roughly constant in size
       over time. Use 'mul' (multiplicative) when swings grow proportionally with the level
@@ -293,6 +292,11 @@ class run_forecasting_tool(BaseModel):
             "Use this INSTEAD of TABLE_NAME if the data was already queried, filtered, or aggregated "
             "(e.g., after isolating a single Metric from subcount_data_synced)."
         )
+    )
+    
+    where_clause: Optional[str] = Field(
+        default=None,
+        description="Optional PostgreSQL WHERE clause to filter the data before running the forecast (e.g., '\"Metric\" = ''Gross Adds'''). Exclude the 'WHERE' keyword."
     )
 
     value_column: str = Field(

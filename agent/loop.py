@@ -334,6 +334,12 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
         max_retries = 3
         for attempt in range(max_retries):
             allowed_names = CATEGORY_TOOLS.get(category_hint)
+
+            if allowed_names is not None:
+                allowed_names = allowed_names.copy()
+                if "execute_sql_query_tool" not in allowed_names:
+                    allowed_names.append("execute_sql_query_tool")
+
             active_tools = (
                 [t for t in TOOLS if t["function"]["name"] in allowed_names]
                 if allowed_names else TOOLS
@@ -349,6 +355,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
 
             assistant_msg = response.choices[0].message.model_dump(exclude_none=True)
             
+            # The agent breaks the loop successfully ONLY when it answers with text (no tool calls)
             if not assistant_msg.get("tool_calls"):
                 raw_outputs.append(f"Sub-question: {sq_text}\nAnswer: {_extract_text_content(response.choices[0].message)}")
                 break
@@ -366,6 +373,8 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                     has_turn_error = True
                 else:
                     current_turn_dfs.extend(extracted_objects)
+                    # Append successful outputs dynamically
+                    raw_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
                     
                 msgs.append({
                     "role": "tool",
@@ -374,10 +383,8 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                     "content": output_text
                 })
                 
-            if not has_turn_error:
-                raw_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
-                break
-            elif attempt == max_retries - 1:
+            # Log catastrophic failure only if the final attempt also failed
+            if attempt == max_retries - 1 and has_turn_error:
                 raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {max_retries} attempts.")
         
         routing_latencies[f"  ↳ Tool Exec {idx + 1}"] = round(time.perf_counter() - t0_sq, 2)
