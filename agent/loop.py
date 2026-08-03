@@ -340,7 +340,7 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
             
         msgs.append({"role": "user", "content": sq_text})
 
-        for attempt in range(max_retries):
+        for attempt in range(Max_retries):
             allowed_names = CATEGORY_TOOLS.get(category_hint)
 
             if allowed_names is not None:
