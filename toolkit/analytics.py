@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional, Union
 import mlflow
 import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 from scipy.optimize import linprog
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -456,7 +458,7 @@ def run_random_forest_tool(
     columns_to_fetch = [target_variable] + feature_variables
 
     try:
-        # ── 1. Data Loading ──────────────────────────────────────────────
+        # ── 1. Data Loading ──
         if dataframe_id:
             df = df_memory.get_df(dataframe_id) if df_memory else None
             if df is None:
@@ -466,68 +468,46 @@ def run_random_forest_tool(
         else:
             return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "model": None}
 
-        # ── 2. Column Validation ─────────────────────────────────────────
-        # Check requested columns actually exist before doing any work.
+        # ── 2. Column Validation & Cleaning ──
         missing = [c for c in columns_to_fetch if c not in df.columns]
         if missing:
             return {
-                "text": f"Error: The following columns were not found in the data: {missing}. "
-                        f"Available columns: {df.columns.tolist()}",
+                "text": f"Error: Columns missing: {missing}. Available: {df.columns.tolist()}",
                 "model": None
             }
 
-        # Narrow the dataframe to only the columns we care about so stray
-        # underscore-named columns from the broader table can never leak in.
         df = df[columns_to_fetch].copy()
-
         if df.empty or len(df) <= len(feature_variables):
             return {"text": "Error: Not enough data points.", "model": None}
 
-        # ── 3. Target Preparation ────────────────────────────────────────
+        # ── 3. Target Preparation ──
         task = task_type.lower()
         if task == "regression":
             df[target_variable] = pd.to_numeric(df[target_variable], errors="coerce")
         else:
-            # For classification keep target as string so class labels are readable
             df[target_variable] = df[target_variable].astype(str)
 
-        # Drop rows where the target is missing before encoding features
         df = df.dropna(subset=[target_variable])
-
         if len(df) < 10:
             return {"text": "Error: Not enough valid target rows to train a model.", "model": None}
 
-        # ── 4. Feature Encoding ──────────────────────────────────────────
-        # Identify which of the *requested* feature columns are categorical
-        categorical_features = [
-            col for col in feature_variables
-            if col in df.columns and df[col].dtype == "object"
-        ]
-        numeric_features = [
-            col for col in feature_variables
-            if col in df.columns and col not in categorical_features
-        ]
+        # ── 4. Feature Encoding ──
+        categorical_features = [col for col in feature_variables if col in df.columns and df[col].dtype == "object"]
+        numeric_features = [col for col in feature_variables if col in df.columns and col not in categorical_features]
 
-        # Convert numeric features, coercing unparseable values to NaN
         for col in numeric_features:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        # One-hot encode categoricals; drop_first avoids perfect multicollinearity
         if categorical_features:
             df = pd.get_dummies(df, columns=categorical_features, drop_first=True)
 
-        # Rebuild the feature list from the current df columns — this correctly
-        # picks up the new one-hot columns (e.g. 'channel_TV', 'channel_Digital')
-        # while excluding the target and any other columns that might have slipped in.
         current_features = [col for col in df.columns if col != target_variable]
-
-        # Drop any rows with NaN in features or target
         df = df.dropna(subset=[target_variable] + current_features)
 
         if len(df) < 10:
-            return {"text": "Error: Data size too small after cleaning to train a valid model.", "model": None}
+            return {"text": "Error: Data size too small after cleaning.", "model": None}
 
-        # ── 5. Train / Test Split ────────────────────────────────────────
+        # ── 5. Train / Test Split ──
         X = df[current_features]
         y = df[target_variable]
 
@@ -535,7 +515,7 @@ def run_random_forest_tool(
             X, y, test_size=0.2, random_state=42
         )
 
-        # ── 6. Model Fitting & Evaluation ────────────────────────────────
+        # ── 6. Model Fitting & Evaluation ──
         if task == "regression":
             model = RandomForestRegressor(
                 n_estimators=n_estimators, max_depth=7,
@@ -543,10 +523,24 @@ def run_random_forest_tool(
             )
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
+            r2 = r2_score(y_test, preds)
+            rmse = mean_squared_error(y_test, preds) ** 0.5
 
             result_text = f"Random Forest Regression Results (n_estimators={n_estimators}):\n"
-            result_text += f"  • Test R²:   {r2_score(y_test, preds):.4f}\n"
-            result_text += f"  • Test RMSE: {mean_squared_error(y_test, preds) ** 0.5:.4f}\n\n"
+            result_text += f"  • Test R²:   {r2:.4f}\n"
+            result_text += f"  • Test RMSE: {rmse:.4f}\n\n"
+
+            # Diagnostic Chart: Actual vs. Predicted
+            diag_fig = px.scatter(
+                x=y_test, y=preds,
+                labels={"x": f"Actual {target_variable}", "y": f"Predicted {target_variable}"},
+                title=f"Actual vs. Predicted ({target_variable})",
+                template="plotly_white", opacity=0.7
+            )
+            diag_fig.add_shape(
+                type="line", line=dict(dash="dash", color="gray"),
+                x0=y_test.min(), y0=y_test.min(), x1=y_test.max(), y1=y_test.max()
+            )
         else:
             model = RandomForestClassifier(
                 n_estimators=n_estimators, max_depth=7,
@@ -554,26 +548,51 @@ def run_random_forest_tool(
             )
             model.fit(X_train, y_train)
             preds = model.predict(X_test)
+            acc = accuracy_score(y_test, preds)
 
             result_text = f"Random Forest Classification Results (n_estimators={n_estimators}):\n"
-            result_text += f"  • Test Accuracy: {accuracy_score(y_test, preds):.4f}\n"
+            result_text += f"  • Test Accuracy: {acc:.4f}\n"
             result_text += f"Classification Report:\n{classification_report(y_test, preds)}\n\n"
 
-        # ── 7. Feature Importances ───────────────────────────────────────
-        feat_imp = sorted(
-            zip(current_features, model.feature_importances_),
-            key=lambda x: x[1],
-            reverse=True
-        )
-        result_text += f"Feature Importances — top {min(10, len(feat_imp))} of {len(feat_imp)} features "
-        result_text += f"(trained on {len(X_train):,} rows, tested on {len(X_test):,} rows):\n"
-        for feat, imp in feat_imp[:10]:
-            result_text += f"  • {feat}: {imp:.4f}\n"
+            diag_fig = None
 
-        return {"text": result_text, "model": model}
+        # ── 7. Feature Importance Dataframe (For Excel Export) ──
+        importances = model.feature_importances_
+        feat_imp_df = pd.DataFrame({
+            "Feature": current_features,
+            "Importance_Score": importances,
+            "Importance_Percentage": importances * 100
+        }).sort_values(by="Importance_Score", ascending=False).reset_index(drop=True)
+
+        result_text += f"Feature Importances (Top {min(10, len(feat_imp_df))}):\n"
+        for _, row in feat_imp_df.head(10).iterrows():
+            result_text += f"  • {row['Feature']}: {row['Importance_Score']:.4f} ({row['Importance_Percentage']:.1f}%)\n"
+
+        # ── 8. Feature Importance Plotly Chart ──
+        top_features = feat_imp_df.head(15).sort_values(by="Importance_Score", ascending=True)
+        fig = px.bar(
+            top_features,
+            x="Importance_Score",
+            y="Feature",
+            orientation="h",
+            title=f"Random Forest Feature Importances ({target_variable})",
+            labels={"Importance_Score": "Gini Importance", "Feature": "Feature"},
+            template="plotly_white",
+            color="Importance_Score",
+            color_continuous_scale="Viridis"
+        )
+        fig.update_layout(margin=dict(l=40, r=40, t=60, b=40))
+
+        # ── 9. Return Unified Payload ──
+        return {
+            "text": result_text,
+            "data": feat_imp_df,     # Picks up automatically for Excel export
+            "figure": fig,           # Rendered via st.plotly_chart in UI
+            "model": model
+        }
 
     except Exception as e:
-        return {"text": f"Random Forest Error: {e}", "model": None}
+        return {"text": f"Random Forest Error: {e}", "data": None, "figure": None, "model": None}
   
 
 # ─── Forecasting & Scenario Planning Tools ───────────────────────────────────────────
