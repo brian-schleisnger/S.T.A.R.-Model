@@ -144,7 +144,7 @@ class SemanticCache:
             with engine.connect() as conn:
                 row = conn.execute(sql, {"vec": vec_str}).fetchone()
         except Exception as e:
-            logger.warning(f"Cache lookup failed ({type(e).__name__}): {e}")
+            logger.warning(f"Cache lookup failed ({type(e).__name__}): {e}", exc_info=True)
             return None
 
         if row is None:
@@ -182,6 +182,10 @@ class SemanticCache:
 
         Uses INSERT ... ON CONFLICT (prompt) DO UPDATE so re-running the same
         prompt always refreshes the cached result rather than failing.
+
+        BYTEA columns are passed via the raw pg8000 connection using named
+        parameters so the driver handles bytes natively without SQLAlchemy
+        coercing them to strings.
         """
         try:
             embedding = self._get_embedding(user_prompt)
@@ -190,34 +194,38 @@ class SemanticCache:
             dfs_blob = pickle.dumps(dfs)
             figs_blob = pickle.dumps(figures)
 
-            sql = sa.text("""
-                INSERT INTO star_semantic_cache
-                    (prompt, embedding, final_text, dfs_pickle, figures_pickle, timestamp)
-                VALUES
-                    (:prompt, CAST(:vec AS vector), :final_text, :dfs, :figs, :ts)
-                ON CONFLICT (prompt) DO UPDATE SET
-                    embedding      = EXCLUDED.embedding,
-                    final_text     = EXCLUDED.final_text,
-                    dfs_pickle     = EXCLUDED.dfs_pickle,
-                    figures_pickle = EXCLUDED.figures_pickle,
-                    timestamp      = EXCLUDED.timestamp
-            """)
-
             engine = get_db_engine()
             with engine.begin() as conn:
-                conn.execute(sql, {
-                    "prompt":     user_prompt.strip().lower(),
-                    "vec":        vec_str,
-                    "final_text": final_text,
-                    "dfs":        dfs_blob,
-                    "figs":       figs_blob,
-                    "ts":         time.time(),
-                })
+                # Access the underlying pg8000 connection so BYTEA params are
+                # passed as raw bytes rather than going through SQLAlchemy's
+                # text() layer, which would stringify them.
+                raw = conn.connection
+                raw.run(
+                    """
+                    INSERT INTO star_semantic_cache
+                        (prompt, embedding, final_text, dfs_pickle, figures_pickle, timestamp)
+                    VALUES
+                        (:p, CAST(:v AS vector), :t, :d, :f, :ts)
+                    ON CONFLICT (prompt) DO UPDATE SET
+                        embedding      = EXCLUDED.embedding,
+                        final_text     = EXCLUDED.final_text,
+                        dfs_pickle     = EXCLUDED.dfs_pickle,
+                        figures_pickle = EXCLUDED.figures_pickle,
+                        timestamp      = EXCLUDED.timestamp
+                    """,
+                    p=user_prompt.strip().lower(),
+                    v=vec_str,
+                    t=final_text,
+                    d=dfs_blob,
+                    f=figs_blob,
+                    ts=time.time(),
+                )
 
         except Exception as e:
             # Log but never crash the primary UI loop
             logger.warning(
-                f"Failed to save execution to semantic cache ({type(e).__name__}): {e}"
+                f"Failed to save execution to semantic cache ({type(e).__name__}): {e}",
+                exc_info=True,
             )
 
     def delete_from_cache(self, user_prompt: str):
