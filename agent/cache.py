@@ -47,8 +47,16 @@ class SemanticCache:
         """
         engine = get_db_engine()
         with engine.begin() as conn:
-            # Enable pgvector extension (idempotent)
-            conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
+            # Verify the vector extension is available (Databricks pre-installs
+            # it; we can't CREATE EXTENSION ourselves but it's always present).
+            result = conn.execute(
+                sa.text("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            ).fetchone()
+            if result is None:
+                raise RuntimeError(
+                    "pgvector extension is not enabled on this Postgres instance. "
+                    "Ask a Databricks admin to run: CREATE EXTENSION vector;"
+                )
 
             # Main cache table — prompt is the natural unique key
             conn.execute(sa.text(f"""
