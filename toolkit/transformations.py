@@ -125,15 +125,22 @@ def execute_sql_query_tool(sql_query: str) -> dict:
         if df.empty:
             return {"text": "Error: Query executed successfully, but returned 0 rows.", "data": None}
         
-        csv_text = df.head(100).to_csv(index=False)
-        return {"text": f"Success. Showing top 100 rows:\n{csv_text}", "data": df}
+        # FIX: Show the head and the tail so the LLM always sees the most recent time periods
+        if len(df) > 100:
+            preview_df = pd.concat([df.head(5), df.tail(95)])
+            csv_text = preview_df.to_csv(index=False)
+            summary_text = f"Success. Data has {len(df)} rows. Showing first 5 and last 95 rows:\n{csv_text}"
+        else:
+            csv_text = df.to_csv(index=False)
+            summary_text = f"Success. Showing all {len(df)} rows:\n{csv_text}"
+            
+        return {"text": summary_text, "data": df}
         
     except Exception as e:
         error_msg = str(e)
         if "does not exist" in error_msg.lower() or "missingcolumn" in error_msg.lower():
              return {"text": f"Error executing SQL: {error_msg}\n\nSYSTEM HINT: Do not query information_schema. Look at the JSON schema in your system prompt for the correct exact column names (e.g., Activation_Year instead of Year).", "data": None}
         return {"text": f"Error executing SQL: {error_msg}", "data": None}
-
 
 # ─── Data Transformation Tools ───────────────────────────────────────────
 @mlflow.trace(name="join_dataframes_tool")
