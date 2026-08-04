@@ -426,7 +426,7 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
             context_instruction="Preserve all numerical values, metric names, and tool error messages."
         )
 
-    synthesis_prompt = f"""You are a data insights assistant. 
+    synthesis_prompt = f"""You are a data insights assistant presenting to business leaders with limited statistical knowledge. 
     User's Original Prompt: {user_prompt}
     Raw Data Extracted across all tools: {raw_outputs_str}
     Relevant Schema: {json.dumps(relevant_schema)}
