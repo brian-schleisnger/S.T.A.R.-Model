@@ -25,6 +25,7 @@ class SubQuestion(BaseModel):
         "RATIO_ANALYSIS",
         "STATISTICAL_MODELING",
         "ML_MODELING",
+        "SAC_OPTIMIZATION",
         "FORECASTING_AND_SCENARIOS",
         "VISUALIZATION",
         "CUSTOM_PYTHON",
@@ -161,64 +162,194 @@ class run_neural_network_tool(BaseModel):
     """
     Trains a Multi-Layer Perceptron (MLP) Neural Network for complex non-linear regression or classification.
     Use this for advanced predictive modeling when basic regression or Random Forest is insufficient.
+
+    Returns train + test metrics, a training loss curve, actual-vs-predicted and residual charts
+    (regression), a confusion matrix (classification), permutation-based feature importance,
+    and architecture feedback (overfitting / convergence warnings).
+    Optionally predicts on a new data point when predict_on is supplied.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"'. Omit if passing dataframe_id."
     )
     dataframe_id: Optional[str] = Field(
         default=None,
-        description="The ID of a dataset saved to memory in a previous step."
+        description="The ID of a dataset saved to memory in a previous step (e.g., 'df_a1b2c3'). Use this INSTEAD of TABLE_NAME if data was already queried or aggregated."
     )
     target_variable: str = Field(
-        ..., 
-        description="The exact column name of the target variable to predict."
+        ...,
+        description="The exact column name of the target variable to predict (e.g., 'npv', 'sac', 'Tactic')."
     )
     feature_variables: List[str] = Field(
-        ..., 
+        ...,
         description="A list of exact column names for the predictor variables."
     )
     task_type: Literal["regression", "classification"] = Field(
-        ..., 
-        description="Specify 'regression' or 'classification'."
+        ...,
+        description="'regression' if the target is a continuous number (e.g., npv, sac). 'classification' if the target is a category (e.g., Sales_Channel, Activation_Plan)."
     )
     hidden_layer_sizes: Optional[List[int]] = Field(
-        default=[100, 50], 
-        description="The architecture of the hidden layers (e.g., [100, 50]). Default is two layers with 100 and 50 neurons."
+        default=[100, 50],
+        description=(
+            "Neuron count per hidden layer, e.g. [100, 50] = two layers with 100 and 50 neurons. "
+            "Larger values increase model capacity but slow training and risk overfitting on small datasets. "
+            "Default [100, 50] is a sensible starting point for most problems."
+        )
     )
     max_iter: Optional[int] = Field(
         default=500,
-        description="Maximum number of iterations. Kept low to ensure reasonable execution time."
+        description="Maximum training epochs. The tool uses early stopping, so training may end earlier. Increase if the result text warns that max_iter was reached."
+    )
+    predict_on: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Optional. A dictionary of feature_name → value for a single new data point you want "
+            "to predict on after training. Must include every feature in feature_variables. "
+            "Example: {\"Marketing\": -450.0, \"Sales_Channel\": \"Direct\", \"Geobucket\": 3}. "
+            "The prediction will be appended to the result text."
+        )
     )
 
 class run_optimization_tool(BaseModel):
     """
-    Runs linear programming optimization (using scipy.optimize.linprog) to maximize or minimize an objective function subject to linear constraints.
-    Use this to optimize budget allocation, resource distribution, or find the best mix under constraints.
+    Runs general-purpose linear programming optimization (scipy.optimize.linprog) to maximize or
+    minimize a custom objective function subject to linear constraints.
+    Use this for abstract resource allocation problems where you supply your own coefficients.
+    For SAC / marketing budget allocation problems using DISH historical data, prefer
+    run_sac_optimization_tool instead — it computes coefficients automatically from the data.
     """
     objective_coefficients: List[float] = Field(
-        ..., 
-        description="The coefficients of the objective function. (e.g., [cost1, cost2]). If maximizing, provide negative values."
+        ...,
+        description=(
+            "The coefficients of the objective function, one per decision variable "
+            "(e.g., [npv_per_dollar_tactic1, npv_per_dollar_tactic2]). "
+            "Set maximize=True rather than manually negating values."
+        )
+    )
+    maximize: Optional[bool] = Field(
+        default=False,
+        description="Set to True to maximize the objective. Default is False (minimize)."
+    )
+    variable_names: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Human-readable labels for each decision variable, in the same order as "
+            "objective_coefficients (e.g., ['Direct Mail', 'Digital Search', 'DRTV']). "
+            "When provided, all output tables and text use these names instead of 'Variable_1' etc."
+        )
     )
     inequality_constraints_matrix: Optional[List[List[float]]] = Field(
         default=None,
-        description="The left-hand side coefficients for the inequality constraints (A_ub). Less-than-or-equal-to form."
+        description=(
+            "Left-hand side coefficients for ≤ inequality constraints (A_ub). "
+            "Each inner list is one constraint row, with one coefficient per decision variable. "
+            "Example — total budget ≤ 1,000,000 across 3 tactics: [[1.0, 1.0, 1.0]]."
+        )
     )
     inequality_constraints_bounds: Optional[List[float]] = Field(
         default=None,
-        description="The right-hand side limits for the inequality constraints (b_ub)."
+        description="Right-hand side limits for each inequality constraint row (b_ub)."
     )
     equality_constraints_matrix: Optional[List[List[float]]] = Field(
         default=None,
-        description="The left-hand side coefficients for equality constraints (A_eq)."
+        description="Left-hand side coefficients for equality constraints (A_eq)."
     )
     equality_constraints_bounds: Optional[List[float]] = Field(
         default=None,
-        description="The right-hand side limits for equality constraints (b_eq)."
+        description="Right-hand side values for each equality constraint (b_eq)."
     )
     bounds: Optional[List[List[Optional[float]]]] = Field(
         default=None,
-        description="The (min, max) bounds for each variable. None means no bound. (e.g., [[0, None], [0, None]])."
+        description=(
+            "Per-variable [min, max] bounds. Use null for no bound. "
+            "Example for 3 variables with a $0 floor and no ceiling: "
+            "[[0, null], [0, null], [0, null]]."
+        )
+    )
+
+
+class run_sac_optimization_tool(BaseModel):
+    """
+    Data-aware SAC / marketing budget optimizer for DISH TV acquisition economics.
+    Automatically queries acquisition_data_v3 and dbs_marketing_sync to compute
+    historical efficiency metrics (NPV per activation, cost per activation) for each
+    marketing tactic, then solves a linear program to find the spend allocation that
+    maximises total projected NPV (or minimises total SAC) within the given budget.
+
+    Use this whenever the user asks questions like:
+      - "How should we allocate our $5M marketing budget?"
+      - "What is the optimal SAC allocation across tactics?"
+      - "Which marketing channels give us the best NPV per dollar?"
+      - "Optimize our spend mix to maximize subscriber NPV"
+      - "What's the most efficient way to acquire X new subscribers?"
+
+    Returns a plain-English recommendation with tactic-level spend amounts, projected
+    activations, projected NPV, historical benchmarks, sensitivity analysis on the
+    budget constraint, and a bar chart — all labelled with real tactic names.
+    """
+    total_budget: float = Field(
+        ...,
+        description=(
+            "The total marketing budget available to allocate across tactics, in dollars. "
+            "Example: 5000000.0 for a $5M budget."
+        )
+    )
+    objective: Optional[str] = Field(
+        default="npv",
+        description=(
+            "What to optimize for. "
+            "'npv' (default) — maximise total projected net present value across all activations. "
+            "'sac' — minimise total subscriber acquisition cost."
+        )
+    )
+    tactic_filters: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Optional list of specific marketing tactic names to include. "
+            "If omitted, all tactics with sufficient historical data are considered. "
+            "Valid tactic names match the 'Tactic' column in acquisition_data_v3: "
+            "'direct mail', 'digital', 'TV', 'print', 'OOH/out of home', 'radio', etc. "
+            "Use exact casing as it appears in the data."
+        )
+    )
+    min_spend_by_tactic: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Optional minimum spend floor (in dollars) for specific tactics. "
+            "Only include tactics that need a floor — omitted tactics default to $0 minimum. "
+            "Example: {'direct mail': 200000, 'digital': 500000}"
+        )
+    )
+    max_spend_by_tactic: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Optional maximum spend ceiling (in dollars) for specific tactics. "
+            "Omit tactics that have no cap. "
+            "Example: {'TV': 1000000}"
+        )
+    )
+    target_activations: Optional[float] = Field(
+        default=None,
+        description=(
+            "Optional exact number of new subscriber activations to hit. "
+            "When set, the optimizer adds an equality constraint so the projected "
+            "activation count equals this value exactly. "
+            "Leave null to let the optimizer find the activation count naturally."
+        )
+    )
+    start_year: Optional[int] = Field(
+        default=None,
+        description=(
+            "Optional start year (inclusive) for the historical data window used to "
+            "compute efficiency benchmarks. Example: 2022. "
+            "If omitted, all available history is used."
+        )
+    )
+    end_year: Optional[int] = Field(
+        default=None,
+        description=(
+            "Optional end year (inclusive) for the historical data window. Example: 2025."
+        )
     )
 
 
