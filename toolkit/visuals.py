@@ -135,7 +135,8 @@ def generate_barchart_tool(
     dataframe_id: Optional[str] = None,
     category_column: Optional[str] = None, 
     where_clause: Optional[str] = None,
-    aggregation: str = "SUM"
+    aggregation: str = "SUM",
+    df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
     Generates an interactive Plotly bar chart aggregating y_column per x_column group.
@@ -145,7 +146,7 @@ def generate_barchart_tool(
     Sorts by x_column ascending; falls back to y_column descending if x is non-sortable.
     """
     try:
-        df, x_col, y_col, cat_col, y_label = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause, aggregation)
+        df, x_col, y_col, cat_col, y_label = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause, aggregation, df_memory=df_memory)
         
         df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
         df = df.dropna(subset=[x_col, y_col])
@@ -212,7 +213,8 @@ def generate_linechart_tool(
     dataframe_id: Optional[str] = None,
     category_column: Optional[str] = None, 
     where_clause: Optional[str] = None,
-    aggregation: str = "SUM"
+    aggregation: str = "SUM",
+    df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
     Generates a Plotly line chart showing the trend of y_column over x_column.
@@ -222,7 +224,7 @@ def generate_linechart_tool(
     Uses unified hover mode so all series values are visible at each x position.
     """
     try:
-        df, x_col, y_col, cat_col, y_label = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause, aggregation)
+        df, x_col, y_col, cat_col, y_label = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause, aggregation, df_memory=df_memory)
 
         df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
         df = df.dropna(subset=[x_col, y_col])
@@ -251,7 +253,8 @@ def generate_scatterplot_tool(
     dataframe_id: Optional[str] = None,
     category_column: Optional[str] = None, 
     where_clause: Optional[str] = None, 
-    include_trendline: bool = False
+    include_trendline: bool = False,
+    df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
     Generates an interactive Plotly scatterplot of y_column vs x_column.
@@ -260,7 +263,7 @@ def generate_scatterplot_tool(
     Returns the figure object, the plotted DataFrame, and a status text string.
     """
     try:
-        df, x_col, y_col, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause)
+        df, x_col, y_col, cat_col, _ = _fetch_chart_data(TABLE_NAME, dataframe_id, x_column, y_column, category_column, where_clause, df_memory=df_memory)
         
         df[x_col] = pd.to_numeric(df[x_col], errors='coerce')
         df[y_col] = pd.to_numeric(df[y_col], errors='coerce')

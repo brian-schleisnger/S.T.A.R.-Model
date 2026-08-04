@@ -98,14 +98,12 @@ footer {
 }
 
 /* ─── Thumbs Up / Down Rating Buttons ────────────────────────── */
-/* Target the two small rating buttons inside act_col4 specifically
-   by scoping to the chat message content area. This avoids stomping
-   on sidebar or other button styles. */
+/* Action bar buttons (Export, Re-run, Helpful, Not helpful) sit inside
+   chat message content. Uniform height keeps the row tidy. */
 [data-testid="stChatMessageContent"] button[kind="secondary"] {
-    padding: 2px 6px !important;
-    font-size: 1.1rem !important;
-    min-height: 2rem !important;
-    line-height: 1.2 !important;
+    min-height: 2.25rem !important;
+    line-height: 1.4 !important;
+    white-space: nowrap !important;
 }
 
 /* ─── Submitted Rating Labels ─────────────────────────────────── */

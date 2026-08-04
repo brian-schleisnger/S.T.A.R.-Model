@@ -11,6 +11,8 @@ import sys
 import tempfile
 import traceback
 
+import streamlit.components.v1 as components
+
 logger = logging.getLogger(__name__)
 
 from databricks.sdk import WorkspaceClient
@@ -140,7 +142,42 @@ def load_css() -> None:
     except FileNotFoundError:
         st.warning("⚠️ style.css not found. Proceeding with default styling.")
 
-def create_excel_buffer(data_list: list) -> bytes:
+def scroll_to_bottom() -> None:
+    """
+    Injects a tiny JS snippet that scrolls the main content area to the bottom.
+    Prevents Streamlit's default behavior of jumping back to the top of the page
+    on every st.rerun() triggered by button clicks, ratings, re-runs, etc.
+    The iframe height is 0 so it takes up no visible space.
+    """
+    components.html(
+        """
+        <script>
+            // Walk up from this iframe to find Streamlit's main scrollable container
+            // and scroll it to the bottom so the latest message stays in view.
+            (function () {
+                const scrollToBottom = () => {
+                    // The main app content lives in the parent window
+                    const doc = window.parent.document;
+                    // Streamlit wraps everything in a div with overflow:auto
+                    const scroller = doc.querySelector('[data-testid="stAppViewBlockContainer"]')
+                                  || doc.querySelector('.main .block-container')
+                                  || doc.querySelector('.main');
+                    if (scroller) {
+                        scroller.scrollTop = scroller.scrollHeight;
+                    } else {
+                        window.parent.scrollTo(0, window.parent.document.body.scrollHeight);
+                    }
+                };
+                // Small delay lets Streamlit finish rendering new elements first
+                setTimeout(scrollToBottom, 100);
+            })();
+        </script>
+        """,
+        height=0,
+    )
+
+
+
     """Extracts DataFrames from the agent's output, strips timezones, and writes them to an Excel buffer."""
     buffer = io.BytesIO()
     
@@ -329,7 +366,7 @@ for i, msg in enumerate(st.session_state.messages):
                     
             if msg["role"] == "assistant" and (msg.get("dfs") or msg.get("run_log")):
                 st.markdown("---")
-                act_col1, act_col2, act_col3, act_col4 = st.columns([1, 2, 1, 1])
+                act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns(5)
                 
                 with act_col1:
                     if msg.get("dfs"):
@@ -361,31 +398,30 @@ for i, msg in enumerate(st.session_state.messages):
                             st.session_state.rerun_msg_index = i
                             st.rerun()
 
+                # Thumbs up / thumbs down rating — only shown for assistant messages
+                # that have an associated prompt stored (i.e. came from the agent loop).
+                existing_rating = msg.get("rating")  # "up", "down", or None
                 with act_col4:
-                    # Thumbs up / thumbs down rating — only shown for assistant messages
-                    # that have an associated prompt stored (i.e. came from the agent loop).
-                    existing_rating = msg.get("rating")  # "up", "down", or None
                     if existing_rating == "up":
                         st.markdown(
                             '<div class="rating-submitted rating-up">👍 Helpful</div>',
                             unsafe_allow_html=True,
                         )
-                    elif existing_rating == "down":
+                    elif existing_rating != "down" and msg.get("prompt"):
+                        if st.button("� Helpful", key=f"thumbs_up_{i}", use_container_width=True):
+                            st.session_state.pending_rating = (i, True)
+                            st.rerun()
+
+                with act_col5:
+                    if existing_rating == "down":
                         st.markdown(
                             '<div class="rating-submitted rating-down">👎 Not helpful</div>',
                             unsafe_allow_html=True,
                         )
-                    elif msg.get("prompt"):
-                        # No rating yet — show interactive buttons
-                        tb_col1, tb_col2 = st.columns(2)
-                        with tb_col1:
-                            if st.button("👍", key=f"thumbs_up_{i}", use_container_width=True, help="This response was helpful"):
-                                st.session_state.pending_rating = (i, True)
-                                st.rerun()
-                        with tb_col2:
-                            if st.button("👎", key=f"thumbs_down_{i}", use_container_width=True, help="This response was not helpful"):
-                                st.session_state.pending_rating = (i, False)
-                                st.rerun()
+                    elif existing_rating != "up" and msg.get("prompt"):
+                        if st.button("👎 Not helpful", key=f"thumbs_down_{i}", use_container_width=True):
+                            st.session_state.pending_rating = (i, False)
+                            st.rerun()
 
 # ─── 8. RE-RUN HANDLER ───────────────────────────────────────────────────
 if st.session_state.rerun_prompt is not None:
@@ -461,3 +497,8 @@ if prompt := st.chat_input("Ask a question about the data..."):
             st.error(f"Agent Orchestration Error ({type(e).__name__}): {e}")
             with st.expander("Show Traceback"):
                 st.code(traceback.format_exc(), language="python")
+
+# ─── 10. SCROLL ANCHOR ───────────────────────────────────────────────────
+# Keep the viewport at the bottom after every rerun so button clicks and new
+# responses don't jerk the page back to the top.
+scroll_to_bottom()
