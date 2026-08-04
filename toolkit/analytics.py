@@ -58,7 +58,7 @@ def calculate_mutual_information_tool(
     TABLE_NAME: Optional[Union[str, List[str]]] = None,
     dataframe_id: Optional[str] = None,
     target_type: str = "continuous", 
-    df_memory: DataFrameMemory = None
+    df_memory: DataFrameMemory = None 
 ) -> Dict[str, Any]:
     """
     Calculates Shannon Mutual Information between a target variable and multiple features.
@@ -129,6 +129,9 @@ def calculate_mutual_information_tool(
         else:
             mi_scores = mutual_info_classif(X, y, discrete_features=discrete_mask, random_state=Random_state)
 
+        # CONVERSION: Convert nats to bits
+        mi_scores = mi_scores / np.log(2)
+
         # ── 6. Format Outputs ────────────────────────────────────────────
         mi_results = sorted(
             zip(current_features, mi_scores),
@@ -138,7 +141,9 @@ def calculate_mutual_information_tool(
         
         result_text = f"Mutual Information Analysis ({target_type.capitalize()} Target: '{target_variable}'):\n"
         result_text += f"Calculated using Shannon information theory on {len(df):,} observations.\n"
-        result_text += "Higher values indicate stronger dependency (measured in nats).\n\n"
+        
+        # TEXT UPDATE: Changed 'nats' to 'bits'
+        result_text += "Higher values indicate stronger dependency (measured in bits).\n\n"
         
         result_text += "Feature Information Scores:\n"
         for feat, score in mi_results:
@@ -1086,7 +1091,7 @@ def run_random_forest_tool(
 
         # ── 8. Feature Importance Plotly Chart ──
         top_features = feat_imp_df.head(15).sort_values(by="Importance_Score", ascending=True)
-        fig = px.bar(
+        fig_importance = px.bar(
             top_features,
             x="Importance_Score",
             y="Feature",
@@ -1097,18 +1102,196 @@ def run_random_forest_tool(
             color="Importance_Score",
             color_continuous_scale="Viridis"
         )
-        fig.update_layout(margin=dict(l=40, r=40, t=60, b=40))
+        fig_importance.update_layout(margin=dict(l=40, r=40, t=60, b=40))
 
-        # ── 9. Return Unified Payload ──
+        # ── 9. Representative Tree Visualization ─────────────────────────
+        # A Random Forest has no single merged tree.  The most informative
+        # visualization is the *most representative* individual tree — the one
+        # whose per-sample predictions on the test set best match the full
+        # ensemble's predictions.  We find it by minimising MSE between each
+        # tree's leaf-level predictions and the ensemble's predictions on X_test.
+        fig_tree = None
+        try:
+            ensemble_preds = model.predict(X_test)
+
+            best_tree_idx = 0
+            best_mse = float("inf")
+            for i, tree in enumerate(model.estimators_):
+                tree_preds = tree.predict(X_test)
+                mse = float(np.mean((tree_preds - ensemble_preds) ** 2))
+                if mse < best_mse:
+                    best_mse = mse
+                    best_tree_idx = i
+
+            best_tree = model.estimators_[best_tree_idx]
+
+            # ── Convert the sklearn DecisionTree to a Plotly figure ──────
+            # sklearn exposes the full internal tree arrays; we walk them to
+            # build a node/edge trace without needing graphviz or pydot.
+            tree_ = best_tree.tree_
+            n_nodes      = tree_.node_count
+            children_l   = tree_.children_left
+            children_r   = tree_.children_right
+            feature_idx  = tree_.feature
+            thresholds   = tree_.threshold
+            values       = tree_.value          # shape (n_nodes, n_outputs, n_classes)
+            n_samples_node = tree_.n_node_samples
+
+            is_leaf = children_l == -1  # TREE_LEAF sentinel
+
+            # ── Compute (x, y) positions via BFS level-order layout ───────
+            positions: Dict[int, tuple] = {}
+            queue = [(0, 0.5, 1.0)]   # (node_id, x_centre, depth_y)
+            x_offsets: Dict[int, float] = {0: 0.5}
+            level_widths: Dict[int, float] = {0: 1.0}
+
+            while queue:
+                node, x_c, depth = queue.pop(0)
+                positions[node] = (x_c, -depth)  # negative so root is at top
+                width = level_widths.get(node, 1.0) / 2.0
+
+                if not is_leaf[node]:
+                    left  = children_l[node]
+                    right = children_r[node]
+                    level_widths[left]  = width
+                    level_widths[right] = width
+                    queue.append((left,  x_c - width / 2, depth + 1))
+                    queue.append((right, x_c + width / 2, depth + 1))
+
+            # ── Build edge traces ─────────────────────────────────────────
+            edge_x, edge_y = [], []
+            for node in range(n_nodes):
+                if not is_leaf[node]:
+                    px_c, py_c = positions[node]
+                    for child in (children_l[node], children_r[node]):
+                        cx, cy = positions[child]
+                        edge_x += [px_c, cx, None]
+                        edge_y += [py_c, cy, None]
+
+            edge_trace = go.Scatter(
+                x=edge_x, y=edge_y,
+                mode="lines",
+                line=dict(color="#AAAAAA", width=1),
+                hoverinfo="none",
+                showlegend=False,
+            )
+
+            # ── Build node traces ─────────────────────────────────────────
+            node_x, node_y, node_text, node_hover, node_color = [], [], [], [], []
+
+            for node in range(n_nodes):
+                nx_c, ny_c = positions[node]
+                node_x.append(nx_c)
+                node_y.append(ny_c)
+                n_samp = int(n_samples_node[node])
+
+                if is_leaf[node]:
+                    # Leaf: show predicted value
+                    val_arr = values[node]
+                    if task == "regression":
+                        pred_val = float(val_arr[0][0])
+                        label = f"{pred_val:.2f}"
+                        hover = f"Leaf<br>Prediction: {pred_val:.4f}<br>Samples: {n_samp}"
+                        node_color.append(pred_val)
+                    else:
+                        class_counts = val_arr[0]
+                        majority = int(np.argmax(class_counts))
+                        # Map ordinal index back to original class label if possible
+                        try:
+                            class_label = model.classes_[majority]
+                        except Exception:
+                            class_label = str(majority)
+                        label = str(class_label)
+                        purity = float(class_counts[majority] / class_counts.sum())
+                        hover = (
+                            f"Leaf<br>Class: {class_label}<br>"
+                            f"Purity: {purity:.1%}<br>Samples: {n_samp}"
+                        )
+                        node_color.append(purity)
+                else:
+                    # Split node: show feature name and threshold
+                    feat_name = current_features[feature_idx[node]]
+                    thresh    = thresholds[node]
+                    label = f"{feat_name}<br>≤ {thresh:.3g}"
+                    hover = (
+                        f"Split on: {feat_name}<br>"
+                        f"Threshold: {thresh:.4g}<br>"
+                        f"Samples: {n_samp}"
+                    )
+                    node_color.append(0.0)  # interior nodes stay neutral
+
+                node_text.append(label)
+                node_hover.append(hover)
+
+            node_trace = go.Scatter(
+                x=node_x, y=node_y,
+                mode="markers+text",
+                marker=dict(
+                    size=22,
+                    color=node_color,
+                    colorscale="RdYlGn",
+                    showscale=True,
+                    colorbar=dict(
+                        title="Pred. Value" if task == "regression" else "Purity",
+                        thickness=12, len=0.5
+                    ),
+                    line=dict(color="#555555", width=1),
+                ),
+                text=node_text,
+                textposition="middle center",
+                textfont=dict(size=8, color="black"),
+                hovertext=node_hover,
+                hoverinfo="text",
+                showlegend=False,
+            )
+
+            n_leaves = int(is_leaf.sum())
+            depth    = int(best_tree.get_depth())
+            fig_tree = go.Figure(
+                data=[edge_trace, node_trace],
+                layout=go.Layout(
+                    title=dict(
+                        text=(
+                            f"Most Representative Tree (tree #{best_tree_idx} of {n_estimators}) — "
+                            f"depth {depth}, {n_leaves} leaves<br>"
+                            f"<sup>This individual tree's predictions most closely match the full "
+                            f"ensemble on the test set.</sup>"
+                        ),
+                        font=dict(size=13),
+                    ),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    template="plotly_white",
+                    margin=dict(l=20, r=20, t=80, b=20),
+                    height=600,
+                ),
+            )
+
+            result_text += (
+                f"\nRepresentative Tree: tree #{best_tree_idx} (depth {depth}, {n_leaves} leaves). "
+                f"Selected because its predictions most closely match the full {n_estimators}-tree "
+                f"ensemble on the held-out test set.\n"
+            )
+
+        except Exception as tree_err:
+            # Tree viz is best-effort — never block the main result
+            result_text += f"\n(Tree visualization unavailable: {tree_err})\n"
+
+        # ── 10. Return Unified Payload ────────────────────────────────────
+        figures = [fig_importance]
+        if fig_tree is not None:
+            figures.append(fig_tree)
+
         return {
-            "text": result_text,
-            "data": feat_imp_df,     # Picks up automatically for Excel export
-            "figure": fig,           # Rendered via st.plotly_chart in UI
-            "model": model
+            "text":    result_text,
+            "data":    feat_imp_df,
+            "figure":  fig_importance,   # kept for backward compat with loop.py "figure" key
+            "figures": figures,          # both charts for the UI renderer
+            "model":   model,
         }
 
     except Exception as e:
-        return {"text": f"Random Forest Error: {e}", "data": None, "figure": None, "model": None}
+        return {"text": f"Random Forest Error: {e}", "data": None, "figure": None, "figures": [], "model": None}
   
 
 # ─── Forecasting & Scenario Planning Tools ───────────────────────────────────────────
