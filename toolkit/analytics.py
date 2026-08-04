@@ -14,6 +14,7 @@ from sklearn.feature_selection import mutual_info_classif, mutual_info_regressio
 from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.preprocessing import OrdinalEncoder
 from sklearn.preprocessing import StandardScaler
 import statsmodels.api as sm
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -508,13 +509,11 @@ def run_random_forest_tool(
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
         if categorical_features:
-            df = pd.get_dummies(df, columns=categorical_features, drop_first=True)
+            encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
+            df[categorical_features] = encoder.fit_transform(df[categorical_features].astype(str))
 
-        current_features = [col for col in df.columns if col != target_variable]
+        current_features = feature_variables
         df = df.dropna(subset=[target_variable] + current_features)
-
-        if len(df) < min_rows:
-            return {"text": "Error: Data size too small after cleaning.", "model": None}
 
         # ── 5. Train / Test Split ──
         X = df[current_features]
