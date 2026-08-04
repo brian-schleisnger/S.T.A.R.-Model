@@ -11,7 +11,8 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, r2_score
+from sklearn.inspection import permutation_importance
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.preprocessing import OrdinalEncoder
@@ -353,52 +354,406 @@ def run_neural_network_tool(
     dataframe_id: Optional[str] = None,
     hidden_layer_sizes: List[int] = [100, 50],
     max_iter: int = max_iterations,
+    predict_on: Optional[Dict[str, Any]] = None,
     df_memory: DataFrameMemory = None
 ) -> Dict[str, Any]:
     """
     Trains a scikit-learn MLPRegressor or MLPClassifier on the provided features.
-    Features are one-hot encoded for categoricals and StandardScaler-normalized before
+    Features are ordinal-encoded for categoricals and StandardScaler-normalized before
     training. Uses early stopping to avoid overfitting on small datasets.
-    Returns the R² score (regression) or accuracy (classification) on the held-out
-    test set, plus the fitted model and the cleaned DataFrame.
+
+    Returns:
+      • Train + test performance metrics (R²/RMSE/MAE for regression; accuracy +
+        per-class report for classification)
+      • Training loss curve chart (convergence visualization)
+      • Actual vs. Predicted scatter + Residual plot (regression)
+      • Confusion matrix heatmap (classification)
+      • Permutation feature importance chart (model-agnostic, works for both task types)
+      • Architecture feedback: overfitting / convergence / low-signal warnings
+      • Optional single-row prediction when predict_on dict is supplied
     """
     try:
+        # ── 1. Data Loading ──────────────────────────────────────────────────
         if dataframe_id:
             df = df_memory.get_df(dataframe_id) if df_memory else None
             if df is None:
-                return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None, "model": None}
+                return {"text": f"Error: No DataFrame found for ID '{dataframe_id}'.", "data": None, "model": None, "figures": []}
         elif TABLE_NAME:
-            df = _link_tables(TABLE_NAME, random_order=True, limit=max_rows)
+            columns_to_fetch = [target_variable] + feature_variables
+            df = _link_tables(TABLE_NAME, columns=columns_to_fetch, random_order=True, limit=max_rows)
         else:
-            return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None, "model": None}
-            
-        df_clean = df.dropna(subset=[target_variable] + feature_variables)
+            return {"text": "Error: Must provide either TABLE_NAME or dataframe_id.", "data": None, "model": None, "figures": []}
+
+        # ── 2. Column Validation ─────────────────────────────────────────────
+        all_cols = [target_variable] + feature_variables
+        missing = [c for c in all_cols if c not in df.columns]
+        if missing:
+            return {
+                "text": f"Error: Columns not found in data: {missing}. Available: {df.columns.tolist()}",
+                "data": None, "model": None, "figures": []
+            }
+
+        df_clean = df[all_cols].copy()
+
+        # ── 3. Target Preparation ────────────────────────────────────────────
+        task = task_type.lower()
+        if task == "regression":
+            df_clean[target_variable] = pd.to_numeric(df_clean[target_variable], errors="coerce")
+        else:
+            df_clean[target_variable] = df_clean[target_variable].astype(str)
+
+        df_clean = df_clean.dropna(subset=[target_variable])
+
+        if len(df_clean) < min_rows:
+            return {"text": f"Error: Not enough valid rows after cleaning (minimum {min_rows} required).", "data": None, "model": None, "figures": []}
+
+        # ── 4. Feature Encoding (Ordinal for categoricals — same as RF) ──────
+        categorical_features = [c for c in feature_variables if c in df_clean.columns and df_clean[c].dtype == "object"]
+        numeric_features     = [c for c in feature_variables if c in df_clean.columns and c not in categorical_features]
+
+        for col in numeric_features:
+            df_clean[col] = pd.to_numeric(df_clean[col], errors="coerce")
+
+        encoder = None
+        if categorical_features:
+            encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
+            df_clean[categorical_features] = encoder.fit_transform(df_clean[categorical_features].astype(str))
+
+        df_clean = df_clean.dropna(subset=[target_variable] + feature_variables)
+
         X = df_clean[feature_variables]
         y = df_clean[target_variable]
-        
-        X = pd.get_dummies(X, drop_first=True)
-        
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=split, random_state=Random_state)
-        
+
+        # ── 5. Train / Test Split ────────────────────────────────────────────
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=split, random_state=Random_state
+        )
+
         scaler = StandardScaler()
         X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
-        
-        if task_type == 'regression':
-            model = MLPRegressor(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=Random_state)
+        X_test_scaled  = scaler.transform(X_test)
+
+        # ── 6. Model Fitting ─────────────────────────────────────────────────
+        arch = tuple(hidden_layer_sizes)
+        if task == "regression":
+            model = MLPRegressor(
+                hidden_layer_sizes=arch, max_iter=max_iter,
+                early_stopping=True, validation_fraction=0.1,
+                random_state=Random_state
+            )
             model.fit(X_train_scaled, y_train)
-            score = model.score(X_test_scaled, y_test)
-            result_text = f"MLP Regression completed.\nTarget: {target_variable}\nR^2 Score on test set: {score:.4f}"
+
+            train_preds = model.predict(X_train_scaled)
+            test_preds  = model.predict(X_test_scaled)
+
+            train_r2   = r2_score(y_train, train_preds)
+            test_r2    = r2_score(y_test,  test_preds)
+            test_rmse  = mean_squared_error(y_test, test_preds) ** 0.5
+            test_mae   = mean_absolute_error(y_test, test_preds)
+
         else:
-            model = MLPClassifier(hidden_layer_sizes=tuple(hidden_layer_sizes), max_iter=max_iter, early_stopping=True, random_state=Random_state)
+            model = MLPClassifier(
+                hidden_layer_sizes=arch, max_iter=max_iter,
+                early_stopping=True, validation_fraction=0.1,
+                random_state=Random_state
+            )
             model.fit(X_train_scaled, y_train)
-            score = model.score(X_test_scaled, y_test)
-            result_text = f"MLP Classification completed.\nTarget: {target_variable}\nAccuracy on test set: {score:.4f}"
-            
-        return {"text": result_text, "data": df_clean, "model": model}
-        
+
+            train_preds = model.predict(X_train_scaled)
+            test_preds  = model.predict(X_test_scaled)
+
+            train_acc = accuracy_score(y_train, train_preds)
+            test_acc  = accuracy_score(y_test,  test_preds)
+
+        # ── 7. Result Text: Metrics ──────────────────────────────────────────
+        arch_str = " → ".join(str(n) for n in hidden_layer_sizes)
+        result_text  = f"Neural Network ({task_type.title()}) Results\n"
+        result_text += f"{'=' * 50}\n"
+        result_text += f"Architecture:  input({len(feature_variables)}) → {arch_str} → output\n"
+        result_text += f"Training rows: {len(X_train):,}   Test rows: {len(X_test):,}\n"
+        result_text += f"Iterations:    {model.n_iter_} / {max_iter}"
+        result_text += " (converged)\n" if model.n_iter_ < max_iter else " ⚠ max_iter reached — may not have converged\n"
+        result_text += "\n"
+
+        if task == "regression":
+            result_text += f"Performance:\n"
+            result_text += f"  • Train R²:  {train_r2:.4f}\n"
+            result_text += f"  • Test  R²:  {test_r2:.4f}\n"
+            result_text += f"  • Test RMSE: {test_rmse:.4f}\n"
+            result_text += f"  • Test MAE:  {test_mae:.4f}\n"
+        else:
+            result_text += f"Performance:\n"
+            result_text += f"  • Train Accuracy: {train_acc:.4f}\n"
+            result_text += f"  • Test  Accuracy: {test_acc:.4f}\n"
+            result_text += f"\nClassification Report (test set):\n{classification_report(y_test, test_preds)}\n"
+
+        # ── 8. Architecture Feedback (Improvement 5) ─────────────────────────
+        feedback = []
+        if task == "regression":
+            overfit_gap = train_r2 - test_r2
+            if overfit_gap > 0.15:
+                feedback.append(
+                    f"⚠ Overfitting detected (train R²={train_r2:.3f} vs test R²={test_r2:.3f}, "
+                    f"gap={overfit_gap:.3f}). Consider using fewer neurons, adding more data, "
+                    f"or trying Random Forest which is more robust on small datasets."
+                )
+            if test_r2 < 0.3:
+                feedback.append(
+                    f"⚠ Low predictive signal (test R²={test_r2:.3f}). The neural network may not "
+                    f"be finding a meaningful pattern. Try run_ols_regression_tool or "
+                    f"run_random_forest_tool first to confirm whether any linear/non-linear "
+                    f"relationship exists."
+                )
+        else:
+            overfit_gap = train_acc - test_acc
+            if overfit_gap > 0.1:
+                feedback.append(
+                    f"⚠ Overfitting detected (train acc={train_acc:.3f} vs test acc={test_acc:.3f}, "
+                    f"gap={overfit_gap:.3f}). Consider fewer neurons or more training data."
+                )
+            if test_acc < 0.5:
+                feedback.append(
+                    f"⚠ Test accuracy ({test_acc:.3f}) is near chance level. The model may not "
+                    f"have found a useful classification signal in these features."
+                )
+        if model.n_iter_ >= max_iter:
+            feedback.append(
+                f"⚠ Training stopped at max_iter={max_iter} without confirmed convergence. "
+                f"The model may improve with a higher max_iter value."
+            )
+        if feedback:
+            result_text += "\nDiagnostic Feedback:\n"
+            for f_line in feedback:
+                result_text += f"  {f_line}\n"
+
+        # ── 9. Figures ───────────────────────────────────────────────────────
+        figures = []
+
+        # ── 9a. Training Loss Curve (Improvement 3) ──────────────────────────
+        try:
+            loss_curve = model.loss_curve_
+            val_curve  = getattr(model, "validation_scores_", None)
+
+            loss_df = pd.DataFrame({"Epoch": range(1, len(loss_curve) + 1), "Training Loss": loss_curve})
+            fig_loss = go.Figure()
+            fig_loss.add_trace(go.Scatter(
+                x=loss_df["Epoch"], y=loss_df["Training Loss"],
+                mode="lines", name="Training Loss", line=dict(color="#1f77b4", width=2)
+            ))
+            if val_curve is not None:
+                fig_loss.add_trace(go.Scatter(
+                    x=list(range(1, len(val_curve) + 1)), y=val_curve,
+                    mode="lines", name="Validation Score",
+                    line=dict(color="#ff7f0e", width=2, dash="dash")
+                ))
+            fig_loss.update_layout(
+                title=f"Training Loss Curve — {target_variable}",
+                xaxis_title="Epoch", yaxis_title="Loss",
+                template="plotly_white", margin=dict(l=40, r=40, t=60, b=40),
+                legend=dict(x=0.7, y=0.95)
+            )
+            figures.append(fig_loss)
+        except Exception:
+            pass  # best-effort
+
+        # ── 9b. Regression: Actual vs. Predicted + Residuals (Improvement 2) ─
+        if task == "regression":
+            try:
+                residuals = np.array(y_test) - test_preds
+                # Actual vs Predicted
+                fig_avp = go.Figure()
+                fig_avp.add_trace(go.Scatter(
+                    x=list(y_test), y=list(test_preds),
+                    mode="markers",
+                    marker=dict(color="#1f77b4", opacity=0.6, size=5),
+                    name="Predictions",
+                    hovertemplate="Actual: %{x:.3f}<br>Predicted: %{y:.3f}<extra></extra>"
+                ))
+                ref_min = float(min(min(y_test), min(test_preds)))
+                ref_max = float(max(max(y_test), max(test_preds)))
+                fig_avp.add_trace(go.Scatter(
+                    x=[ref_min, ref_max], y=[ref_min, ref_max],
+                    mode="lines", line=dict(color="gray", dash="dash"),
+                    name="Perfect Prediction"
+                ))
+                fig_avp.update_layout(
+                    title=f"Actual vs. Predicted — {target_variable}",
+                    xaxis_title=f"Actual {target_variable}",
+                    yaxis_title=f"Predicted {target_variable}",
+                    template="plotly_white", margin=dict(l=40, r=40, t=60, b=40)
+                )
+                figures.append(fig_avp)
+
+                # Residual plot
+                fig_resid = go.Figure()
+                fig_resid.add_trace(go.Scatter(
+                    x=list(test_preds), y=list(residuals),
+                    mode="markers",
+                    marker=dict(color="#d62728", opacity=0.6, size=5),
+                    name="Residuals",
+                    hovertemplate="Predicted: %{x:.3f}<br>Residual: %{y:.3f}<extra></extra>"
+                ))
+                fig_resid.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_resid.update_layout(
+                    title=f"Residual Plot — {target_variable}",
+                    xaxis_title=f"Predicted {target_variable}",
+                    yaxis_title="Residual (Actual − Predicted)",
+                    template="plotly_white", margin=dict(l=40, r=40, t=60, b=40)
+                )
+                figures.append(fig_resid)
+            except Exception:
+                pass
+
+        # ── 9c. Classification: Confusion Matrix heatmap (Improvement 1) ─────
+        if task == "classification":
+            try:
+                classes   = model.classes_
+                cm        = confusion_matrix(y_test, test_preds, labels=classes)
+                class_strs = [str(c) for c in classes]
+                fig_cm = px.imshow(
+                    cm,
+                    x=class_strs, y=class_strs,
+                    labels=dict(x="Predicted", y="Actual", color="Count"),
+                    title=f"Confusion Matrix — {target_variable}",
+                    text_auto=True,
+                    color_continuous_scale="Blues",
+                    template="plotly_white"
+                )
+                fig_cm.update_layout(margin=dict(l=40, r=40, t=60, b=40))
+                figures.append(fig_cm)
+            except Exception:
+                pass
+
+        # ── 9d. Permutation Feature Importance (Improvement 4) ───────────────
+        perm_imp_df = None
+        try:
+            scoring = "r2" if task == "regression" else "accuracy"
+            perm_result = permutation_importance(
+                model, X_test_scaled, y_test,
+                n_repeats=10, random_state=Random_state, scoring=scoring
+            )
+            perm_means  = perm_result.importances_mean
+            perm_stds   = perm_result.importances_std
+
+            perm_imp_df = pd.DataFrame({
+                "Feature":           feature_variables,
+                "Importance_Mean":   perm_means,
+                "Importance_Std":    perm_stds,
+                "Importance_%":      perm_means / (perm_means.sum() + 1e-9) * 100
+            }).sort_values("Importance_Mean", ascending=False).reset_index(drop=True)
+
+            result_text += f"\nPermutation Feature Importance (Top {min(10, len(perm_imp_df))}):\n"
+            for _, row in perm_imp_df.head(10).iterrows():
+                result_text += (
+                    f"  • {row['Feature']}: {row['Importance_Mean']:.4f} "
+                    f"(±{row['Importance_Std']:.4f})\n"
+                )
+            result_text += (
+                "  Interpretation: shuffling a feature with high importance causes a large "
+                f"drop in test {scoring.upper()}, meaning the model genuinely relies on it.\n"
+                "  Features with near-zero importance add noise and could be removed.\n"
+            )
+
+            # Chart: horizontal bar, sorted ascending so largest is at top
+            top_perm = perm_imp_df.head(15).sort_values("Importance_Mean", ascending=True)
+            fig_perm = go.Figure()
+            fig_perm.add_trace(go.Bar(
+                x=top_perm["Importance_Mean"],
+                y=top_perm["Feature"],
+                orientation="h",
+                error_x=dict(type="data", array=top_perm["Importance_Std"].tolist(), visible=True),
+                marker=dict(
+                    color=top_perm["Importance_Mean"],
+                    colorscale="Viridis",
+                    showscale=True,
+                    colorbar=dict(title="Importance", thickness=12)
+                ),
+                hovertemplate="%{y}: %{x:.4f} ± %{error_x.array:.4f}<extra></extra>"
+            ))
+            fig_perm.update_layout(
+                title=f"Permutation Feature Importance — {target_variable}",
+                xaxis_title=f"Mean Decrease in {scoring.upper()} when Feature is Shuffled",
+                yaxis_title="Feature",
+                template="plotly_white",
+                margin=dict(l=40, r=40, t=60, b=40),
+                height=max(300, 35 * len(top_perm) + 80)
+            )
+            figures.append(fig_perm)
+        except Exception as perm_err:
+            result_text += f"\n(Permutation importance unavailable: {perm_err})\n"
+
+        # ── 10. Predict on New Inputs (Improvement 6) ────────────────────────
+        prediction_text = ""
+        if predict_on is not None:
+            try:
+                input_row = {}
+                for col in feature_variables:
+                    if col not in predict_on:
+                        return {
+                            "text": (
+                                f"Error: predict_on is missing a value for feature '{col}'. "
+                                f"Required features: {feature_variables}"
+                            ),
+                            "data": perm_imp_df, "model": model, "figures": figures
+                        }
+                    input_row[col] = predict_on[col]
+
+                input_df = pd.DataFrame([input_row])
+
+                # Apply the same ordinal encoding the training set used
+                if encoder is not None and categorical_features:
+                    input_df[categorical_features] = encoder.transform(
+                        input_df[categorical_features].astype(str)
+                    )
+                for col in numeric_features:
+                    input_df[col] = pd.to_numeric(input_df[col], errors="coerce")
+
+                input_scaled = scaler.transform(input_df[feature_variables])
+                pred_val     = model.predict(input_scaled)[0]
+
+                prediction_text = f"\nPrediction for Supplied Inputs:\n"
+                for k, v in predict_on.items():
+                    prediction_text += f"  • {k}: {v}\n"
+                prediction_text += f"  → Predicted {target_variable}: {pred_val}"
+                if task == "regression":
+                    prediction_text += f" (model test RMSE: ±{test_rmse:.4f})\n"
+                else:
+                    # Classification: also show probability if available
+                    prediction_text += f"\n"
+                    try:
+                        proba = model.predict_proba(input_scaled)[0]
+                        for cls, p in zip(model.classes_, proba):
+                            prediction_text += f"    P({cls}): {p:.3f}\n"
+                    except Exception:
+                        pass
+
+                result_text += prediction_text
+            except Exception as pred_err:
+                result_text += f"\n(Prediction on new inputs failed: {pred_err})\n"
+
+        # ── 11. Export DataFrame ─────────────────────────────────────────────
+        # Prefer permutation importance for Excel; fall back to empty summary
+        export_df = perm_imp_df if perm_imp_df is not None else pd.DataFrame({
+            "Metric": ["Train Score", "Test Score"],
+            "Value": [
+                train_r2 if task == "regression" else train_acc,
+                test_r2  if task == "regression" else test_acc
+            ]
+        })
+
+        return {
+            "text":    result_text,
+            "data":    export_df,
+            "figure":  figures[0] if figures else None,   # backward compat
+            "figures": figures,
+            "model":   model,
+        }
+
     except Exception as e:
-        return {"text": f"Neural Network Error: {e}\n{traceback.format_exc()}", "data": None, "model": None}
+        return {
+            "text":    f"Neural Network Error: {e}\n{traceback.format_exc()}",
+            "data":    None, "figure": None, "figures": [], "model": None
+        }
 
 
 @mlflow.trace(name="run_optimization_tool")

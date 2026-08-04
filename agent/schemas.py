@@ -162,34 +162,52 @@ class run_neural_network_tool(BaseModel):
     """
     Trains a Multi-Layer Perceptron (MLP) Neural Network for complex non-linear regression or classification.
     Use this for advanced predictive modeling when basic regression or Random Forest is insufficient.
+
+    Returns train + test metrics, a training loss curve, actual-vs-predicted and residual charts
+    (regression), a confusion matrix (classification), permutation-based feature importance,
+    and architecture feedback (overfitting / convergence warnings).
+    Optionally predicts on a new data point when predict_on is supplied.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"'. Omit if passing dataframe_id."
     )
     dataframe_id: Optional[str] = Field(
         default=None,
-        description="The ID of a dataset saved to memory in a previous step."
+        description="The ID of a dataset saved to memory in a previous step (e.g., 'df_a1b2c3'). Use this INSTEAD of TABLE_NAME if data was already queried or aggregated."
     )
     target_variable: str = Field(
-        ..., 
-        description="The exact column name of the target variable to predict."
+        ...,
+        description="The exact column name of the target variable to predict (e.g., 'npv', 'sac', 'Tactic')."
     )
     feature_variables: List[str] = Field(
-        ..., 
+        ...,
         description="A list of exact column names for the predictor variables."
     )
     task_type: Literal["regression", "classification"] = Field(
-        ..., 
-        description="Specify 'regression' or 'classification'."
+        ...,
+        description="'regression' if the target is a continuous number (e.g., npv, sac). 'classification' if the target is a category (e.g., Sales_Channel, Activation_Plan)."
     )
     hidden_layer_sizes: Optional[List[int]] = Field(
-        default=[100, 50], 
-        description="The architecture of the hidden layers (e.g., [100, 50]). Default is two layers with 100 and 50 neurons."
+        default=[100, 50],
+        description=(
+            "Neuron count per hidden layer, e.g. [100, 50] = two layers with 100 and 50 neurons. "
+            "Larger values increase model capacity but slow training and risk overfitting on small datasets. "
+            "Default [100, 50] is a sensible starting point for most problems."
+        )
     )
     max_iter: Optional[int] = Field(
         default=500,
-        description="Maximum number of iterations. Kept low to ensure reasonable execution time."
+        description="Maximum training epochs. The tool uses early stopping, so training may end earlier. Increase if the result text warns that max_iter was reached."
+    )
+    predict_on: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Optional. A dictionary of feature_name → value for a single new data point you want "
+            "to predict on after training. Must include every feature in feature_variables. "
+            "Example: {\"Marketing\": -450.0, \"Sales_Channel\": \"Direct\", \"Geobucket\": 3}. "
+            "The prediction will be appended to the result text."
+        )
     )
 
 class run_optimization_tool(BaseModel):
