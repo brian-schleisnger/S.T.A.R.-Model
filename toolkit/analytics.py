@@ -21,7 +21,7 @@ import statsmodels.api as sm
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 
 from agent.memory import DataFrameMemory
-from .base import TABLE_DIMENSIONS
+from .base import TABLE_DIMENSIONS, run_sql_query
 from .transformations import _link_tables
 
 
@@ -1014,7 +1014,6 @@ def run_sac_optimization_tool(
             ORDER BY AVG("npv") DESC
         """
 
-        from .base import run_sql_query
         econ_df = run_sql_query(acq_query)
 
         if econ_df.empty:
