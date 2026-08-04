@@ -9,11 +9,30 @@ CATEGORY_REGISTRY: dict[str, dict] = {
         }
     },
     "ML_MODELING": {
-        "rule": "non-linear predictive modeling or optimization.",
+        "rule": "non-linear predictive modeling where the goal is to predict a target variable or measure feature importance.",
         "tools": {
             "run_random_forest_tool": "non-linear prediction / feature importance.",
             "run_neural_network_tool": "complex non-linear modeling.",
-            "run_optimization_tool": "budget allocation / linear programming."
+        }
+    },
+    "SAC_OPTIMIZATION": {
+        "rule": (
+            "budget allocation, spend optimization, finding the best mix of marketing tactics, "
+            "maximizing NPV or minimizing SAC under a budget constraint, or any question about "
+            "how to distribute a marketing or acquisition budget. "
+            "Use run_sac_optimization_tool when the question involves DISH historical data. "
+            "Use run_optimization_tool for abstract LP problems where the user supplies their own numbers."
+        ),
+        "tools": {
+            "run_sac_optimization_tool": (
+                "data-driven optimal marketing budget allocation using historical DISH acquisition economics "
+                "(NPV per activation, cost per activation by tactic). "
+                "Handles total budget ceiling, per-tactic min/max spend floors, and optional activation targets."
+            ),
+            "run_optimization_tool": (
+                "general-purpose linear programming for abstract optimization problems "
+                "where the user provides their own objective coefficients and constraints."
+            ),
         }
     },
     "FORECASTING_AND_SCENARIOS": {

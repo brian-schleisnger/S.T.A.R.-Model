@@ -278,6 +278,15 @@ def execute_tool_call(tool_call: Dict[str, Any], attempt: int, run_log: List[str
             for key in ["model", "figure"]:
                 if result.get(key) is not None:
                     extracted_objects.append(result[key])
+            # Some tools (e.g. run_random_forest_tool) return multiple charts under
+            # a "figures" list key.  Drain it here so every figure reaches the UI.
+            # Use id()-based dedup — Plotly Figure.__eq__ returns a Figure, not a bool,
+            # so "not in" would trigger "object has no len()" via truthiness evaluation.
+            existing_ids = {id(obj) for obj in extracted_objects}
+            for extra_fig in result.get("figures", []) or []:
+                if extra_fig is not None and id(extra_fig) not in existing_ids:
+                    extracted_objects.append(extra_fig)
+                    existing_ids.add(id(extra_fig))
         else:
             output_text = str(result)
             

@@ -20,6 +20,7 @@ from agent.schemas import (
     execute_python_tool as execute_python_tool_Schema,
     run_neural_network_tool as run_neural_network_tool_Schema,
     run_optimization_tool as run_optimization_tool_Schema,
+    run_sac_optimization_tool as run_sac_optimization_tool_Schema,
     calculate_mutual_information_tool as calculate_mutual_information_tool_schema,
     join_dataframes_tool as join_dataframes_tool_schema,
     pivot_dataframe_tool as pivot_dataframe_tool_schema
@@ -42,6 +43,7 @@ from .analytics import (
     run_scenario_planning_tool,
     run_neural_network_tool,
     run_optimization_tool,
+    run_sac_optimization_tool,
     calculate_mutual_information_tool,
 )
 from .visuals import (
@@ -70,6 +72,7 @@ TOOL_DISPATCHER = {
     "execute_python_tool": (execute_python_tool, execute_python_tool_Schema),
     "run_neural_network_tool": (run_neural_network_tool, run_neural_network_tool_Schema),
     "run_optimization_tool": (run_optimization_tool, run_optimization_tool_Schema),
+    "run_sac_optimization_tool": (run_sac_optimization_tool, run_sac_optimization_tool_Schema),
     "calculate_mutual_information_tool": (calculate_mutual_information_tool, calculate_mutual_information_tool_schema),
     "join_dataframes_tool": (join_dataframes_tool, join_dataframes_tool_schema),
     "pivot_dataframe_tool": (pivot_dataframe_tool,pivot_dataframe_tool_schema)
