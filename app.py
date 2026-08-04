@@ -177,7 +177,7 @@ def scroll_to_bottom() -> None:
     )
 
 
-
+def create_excel_buffer(data_list: list) -> bytes:
     """Extracts DataFrames from the agent's output, strips timezones, and writes them to an Excel buffer."""
     buffer = io.BytesIO()
     
