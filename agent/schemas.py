@@ -42,7 +42,7 @@ class DecomposedQuestions(BaseModel):
 
 
 # -------------------- ANALYTICS SCHEMAS --------------------
-class calculate_mutual_information_tool(BaseModel):
+class calculate_mutual_information_tool_schema(BaseModel):
     """
     Calculates the mutual information (from Shannon information theory) between a target variable and one or more feature variables.
     Use this to determine how much information the features provide about the target variable, capturing both linear and non-linear dependencies.
@@ -73,7 +73,7 @@ class calculate_mutual_information_tool(BaseModel):
     )
 
 
-class run_kmeans_clustering_tool(BaseModel):
+class run_kmeans_clustering_tool_schema(BaseModel):
     """
     Performs K-Means clustering to group data into distinct segments based on feature similarities. 
     Use this to discover customer segments, group similar behaviors, or identify natural groupings in the data.
@@ -99,7 +99,7 @@ class run_kmeans_clustering_tool(BaseModel):
     )
 
 
-class run_ols_regression_tool(BaseModel):
+class run_ols_regression_tool_schema(BaseModel):
     """
     Performs an Ordinary Least Squares (OLS) multiple regression. Cannot perform non-linear regression. 
     Use this when the user asks to analyze the relationship, correlation, or impact of multiple independent numerical variables on a dependent target variable.
@@ -132,7 +132,7 @@ class run_ols_regression_tool(BaseModel):
     )
 
 
-class run_pca_tool(BaseModel):
+class run_pca_tool_schema(BaseModel):
     """
     Performs Principal Component Analysis (PCA) to reduce dimensionality and find the underlying variance/patterns in a set of features. 
     Use this to identify which combinations of variables explain the most variance in the dataset.
@@ -158,7 +158,7 @@ class run_pca_tool(BaseModel):
     )
 
 
-class run_neural_network_tool(BaseModel):
+class run_neural_network_tool_schema(BaseModel):
     """
     Trains a Multi-Layer Perceptron (MLP) Neural Network for complex non-linear regression or classification.
     Use this for advanced predictive modeling when basic regression or Random Forest is insufficient.
@@ -210,7 +210,7 @@ class run_neural_network_tool(BaseModel):
         )
     )
 
-class run_optimization_tool(BaseModel):
+class run_optimization_tool_schema(BaseModel):
     """
     Runs general-purpose linear programming optimization (scipy.optimize.linprog) to maximize or
     minimize a custom objective function subject to linear constraints.
@@ -268,7 +268,7 @@ class run_optimization_tool(BaseModel):
     )
 
 
-class run_sac_optimization_tool(BaseModel):
+class run_sac_optimization_tool_schema(BaseModel):
     """
     Data-aware SAC / marketing budget optimizer for DISH TV acquisition economics.
     Automatically queries acquisition_data_v3 and dbs_marketing_sync to compute
@@ -353,7 +353,7 @@ class run_sac_optimization_tool(BaseModel):
     )
 
 
-class run_random_forest_tool(BaseModel):
+class run_random_forest_tool_schema(BaseModel):
     """
     Trains a Random Forest machine learning model to predict a target variable based on multiple features. 
     Use this to find non-linear relationships, classify outcomes, or determine the importance/impact of various features.
@@ -389,7 +389,7 @@ class run_random_forest_tool(BaseModel):
     )
 
 
-class run_forecasting_tool(BaseModel):
+class run_forecasting_tool_schema(BaseModel):
     """
     Performs Holt-Winters Exponential Smoothing time series forecasting. Automatically resolves
     the correct year/month column names for any table registered in TABLE_DIMENSIONS
@@ -490,7 +490,7 @@ class ScenarioChange(BaseModel):
         ..., 
         description="The new hypothetical numerical value for this column (e.g., 50000.0)."
     )
-class run_scenario_planning_tool(BaseModel):
+class run_scenario_planning_tool_schema(BaseModel):
     """
     Performs statistical what-if scenario planning and simulations using OLS regression. 
     Use this tool whenever the user asks:
@@ -531,7 +531,7 @@ class run_scenario_planning_tool(BaseModel):
 
 
 # -------------------- TRANSFORMATIONS SCHEMAS --------------------
-class execute_sql_query_tool(BaseModel):
+class execute_sql_query_tool_schema(BaseModel):
     """
     Queries the Databricks database using PostgreSQL syntax. Because this is PostgreSQL, you MUST wrap all column names in double quotes to preserve exact capitalization. 
     Do NOT use this tool if a more specific tool is available for the user's request:
@@ -551,7 +551,7 @@ class execute_sql_query_tool(BaseModel):
     )
 
 
-class join_dataframes_tool(BaseModel):
+class join_dataframes_tool_schema(BaseModel):
     """
     Joins (merges) two previously saved in-memory DataFrames together based on shared columns.
     Use this when you need to combine data from two different tables that you have already queried.
@@ -578,7 +578,7 @@ class join_dataframes_tool(BaseModel):
     )
 
 
-class pivot_dataframe_tool(BaseModel):
+class pivot_dataframe_tool_schema(BaseModel):
     """
     Reshapes an in-memory DataFrame from long format to wide format using pandas pivot_table.
     Use this when long-format metrics (like subcount or P&L rows) need to become columns side-by-side.
@@ -605,7 +605,7 @@ class pivot_dataframe_tool(BaseModel):
     )
 
 
-class calculate_cpa_tool(BaseModel):
+class calculate_cpa_tool_schema(BaseModel):
     """
     Used to calculate marketing cost per acquistion (CPA) ratio.
     calculates three ratios: overall cpa, residential cpa, and residential non-caliber cpa.
@@ -622,7 +622,7 @@ class calculate_cpa_tool(BaseModel):
     )
 
 
-class calculate_ratio_tool(BaseModel):
+class calculate_ratio_tool_schema(BaseModel):
     """
     Calculates a monthly ratio between any two numeric columns across one or two tables or saved dataframes.
     Returns a DataFrame with year, month, the two source values, and the computed ratio
@@ -666,7 +666,7 @@ class calculate_ratio_tool(BaseModel):
     )
 
 
-class execute_python_tool(BaseModel):
+class execute_python_tool_schema(BaseModel):
     """
     Executes raw Python code generated by the LLM in a secure, sandboxed environment.
     Use this as a fallback for complex analytics, custom data manipulation, or advanced mathematical operations that pre-built tools cannot handle.
@@ -703,7 +703,7 @@ class execute_python_tool(BaseModel):
 
 
 #----------------------------VISUALS SCHEMAS----------------------------
-class generate_barchart_tool(BaseModel):
+class generate_barchart_tool_schema(BaseModel):
     """
     Generates a bar chart to compare aggregated numerical values across categorical groups or time periods.
     Automatically handles pre-aggregation (SUM, AVG, COUNT) to ensure clean visualizations.
@@ -739,7 +739,7 @@ class generate_barchart_tool(BaseModel):
     )
 
 
-class generate_histogram_tool(BaseModel):
+class generate_histogram_tool_schema(BaseModel):
     """
     Generates a histogram with an executive box-plot marginal to visualize data distributions, spread, and outliers.
     """
@@ -770,7 +770,7 @@ class generate_histogram_tool(BaseModel):
     )
 
 
-class generate_linechart_tool(BaseModel):
+class generate_linechart_tool_schema(BaseModel):
     """
     Generates a continuous line chart to visualize trends over time or sequences.
     Automatically groups duplicate timestamps and sorts chronologically to prevent erratic line jumps.
@@ -806,7 +806,7 @@ class generate_linechart_tool(BaseModel):
     )
 
 
-class generate_scatterplot_tool(BaseModel):
+class generate_scatterplot_tool_schema(BaseModel):
     """
     Generates an interactive scatterplot to explore relationships between two numerical variables.
     Supports querying a single table or automatically joining multiple tables.
