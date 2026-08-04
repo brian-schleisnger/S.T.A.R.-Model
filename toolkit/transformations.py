@@ -15,7 +15,7 @@ from .validators import validate_safe_python_code, SecurityViolationError
 __all__ = [
     "link_tables",
     "execute_sql_query_tool",
-    "calculate_unit_economics_tool",
+    "calculate_cpa_tool",
     "calculate_ratio_tool",
     "join_dataframes_tool",
     "pivot_dataframe_tool",

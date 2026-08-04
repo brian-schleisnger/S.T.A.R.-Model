@@ -26,32 +26,10 @@ from agent.schemas import (
     pivot_dataframe_tool as pivot_dataframe_tool_schema
 )
 # Import execution functions from their dedicated domain modules
-from .transformations import (
-    execute_sql_query_tool,
-    calculate_cpa_tool,
-    calculate_ratio_tool,
-    join_dataframes_tool,
-    pivot_dataframe_tool,
-    execute_python_tool,
-)
-from .analytics import (
-    run_ols_regression_tool,
-    run_forecasting_tool,
-    run_random_forest_tool,
-    run_pca_tool,
-    run_kmeans_clustering_tool,
-    run_scenario_planning_tool,
-    run_neural_network_tool,
-    run_optimization_tool,
-    run_sac_optimization_tool,
-    calculate_mutual_information_tool,
-)
-from .visuals import (
-    generate_scatterplot_tool,
-    generate_barchart_tool,
-    generate_histogram_tool,
-    generate_linechart_tool,
-)
+from .transformations import *
+from .analytics import *
+from .visuals import *
+from .ml import *
 
 
 # 4. Centralized routing map: maps tool names to (execution_function, pydantic_validator) tuples
