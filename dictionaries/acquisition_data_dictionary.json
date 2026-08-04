@@ -2,6 +2,7 @@
   "table_metadata": {
     "table_name": "acquisition_data_v3",
     "description": "This is a data table containing unique activations for DISH TV accounts between 4th Quarter 2018 and 1st quarter 2026. each row represents one acquisition to the brand. to be counted. a customer must have activated, been active on the pull date, and been active on the final day of the quarter.",
+    "routing_hint": "Include this table when the question involves per-subscriber economics, sales channels, activation plans, packages, monthly cash flow, SAC, NPV, or individual activation-level data.",
     "special_rules": [
                       "Unless explicitly told to, don't sum row totals for this table - instead, look to other tables for monthly totals, and use this for averages and per-subscriber data.", 
                       "There is no data for 2021 3rd Quarter. There were still activations, but remove this time frame unless otherwise specified.", 

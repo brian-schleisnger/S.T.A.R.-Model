@@ -574,3 +574,4 @@ def run_scenario_planning_tool(
         
     except Exception as e:
         return {"text": f"Scenario Planning Error: {str(e)}", "data": None, "model": None}
+    

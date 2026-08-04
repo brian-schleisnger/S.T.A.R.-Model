@@ -11,9 +11,10 @@ import plotly.graph_objects as go
 from pydantic import BaseModel
 
 from agent.cache import agent_cache
-from agent.categories import CATEGORY_REGISTRY, CATEGORY_TOOLS
+from agent.categories import CATEGORY_TOOLS
 from agent.context import SessionContext
 from agent.schemas import DecomposedQuestions
+from agent.tool_descriptions import ENRICHED_CATEGORY_REGISTRY
 from toolkit import TOOLS, TOOL_DISPATCHER
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call
 
@@ -71,11 +72,12 @@ def filter_schema(user_prompt: str, run_log: List[str] = None, context: SessionC
             Your task:
             - Read the user's question carefully.
             - Select ONLY the tables whose data is actually needed to answer it.
-            - If a question touches revenue, costs, ARPU, OIBDA, or P&L line items → include 'dbspl_sync'.
-            - If a question touches subscriber counts, gross/net adds, or churn → include 'subcount_data_synced'.
-            - If a question touches marketing spend, tactics, or budgets → include 'dbs_marketing_sync'.
-            - If a question touches per-subscriber economics, sales cahnnels, activation plans, packages, cash flow, SAC, NPV, or activation data → include 'acquisition_data_v3'.
-            - If a question touches sales, calls, or buyers remorse → include 'sales_data_sync'.
+            - Use these per-table routing hints to guide your selection:
+{chr(10).join(
+    f"              - If the question involves {data.get('table_metadata', {}).get('routing_hint', '').lstrip('Include this table when the question involves ')}"
+    for data in DATA_DICTIONARY.values()
+    if data.get('table_metadata', {}).get('routing_hint')
+)}
             - When in doubt about whether a table is needed, include it rather than exclude it.
             - Return an empty list only if the question is completely unrelated to any data (e.g. a greeting).
 
@@ -187,8 +189,8 @@ def build_tool_selection_prompt(category_hint: str, relevant_schema: dict, conte
         "Available tools for this category:\n"
     ]
     
-    # Generate category tool list dynamically from the registry
-    for cat, data in CATEGORY_REGISTRY.items():
+    # Generate category tool list dynamically from the enriched registry
+    for cat, data in ENRICHED_CATEGORY_REGISTRY.items():
         tool_descriptions = [f"{tool_name} ({desc})" for tool_name, desc in data["tools"].items()]
         prompt_lines.append(f"{cat:<22} → {', '.join(tool_descriptions)}")
 
