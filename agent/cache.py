@@ -58,8 +58,14 @@ class SemanticCache:
             final_text     TEXT,
             dfs_pickle     BYTEA,
             figures_pickle BYTEA,
-            timestamp      FLOAT
+            timestamp      FLOAT,
+            thumbs_up      BOOLEAN DEFAULT NULL,  -- NULL=unrated, TRUE=upvoted, FALSE=downvoted
+            run_count      INTEGER DEFAULT 1       -- increments on each re-run
         );
+
+        -- If upgrading an existing table, run these instead:
+        -- ALTER TABLE star_semantic_cache ADD COLUMN IF NOT EXISTS thumbs_up BOOLEAN DEFAULT NULL;
+        -- ALTER TABLE star_semantic_cache ADD COLUMN IF NOT EXISTS run_count INTEGER DEFAULT 1;
 
         CREATE INDEX IF NOT EXISTS cache_embedding_idx
             ON star_semantic_cache
@@ -117,6 +123,9 @@ class SemanticCache:
         Issues a single SQL query using pgvector's <=> cosine distance operator
         and the IVFFlat index — O(log n) instead of the former O(n) Python loop.
 
+        Entries marked thumbs_up = FALSE (downvoted or re-run) are excluded so
+        they are preserved for audit purposes but never served as cache hits.
+
         Returns the cached dictionary if the top match has
         similarity >= SIMILARITY_THRESHOLD, else None.
         """
@@ -128,6 +137,8 @@ class SemanticCache:
 
         vec_str = self._vec_to_str(query_vector)
 
+        # Exclude downvoted entries (thumbs_up = FALSE).
+        # NULL (unrated) and TRUE (upvoted) are both eligible for cache hits.
         sql = sa.text("""
             SELECT prompt,
                    final_text,
@@ -135,6 +146,7 @@ class SemanticCache:
                    figures_pickle,
                    1 - (embedding <=> CAST(:vec AS vector)) AS similarity
             FROM   star_semantic_cache
+            WHERE  thumbs_up IS NOT FALSE
             ORDER  BY embedding <=> CAST(:vec AS vector)
             LIMIT  1
         """)
@@ -203,15 +215,17 @@ class SemanticCache:
                 raw.run(
                     """
                     INSERT INTO star_semantic_cache
-                        (prompt, embedding, final_text, dfs_pickle, figures_pickle, timestamp)
+                        (prompt, embedding, final_text, dfs_pickle, figures_pickle, timestamp, thumbs_up, run_count)
                     VALUES
-                        (:p, CAST(:v AS vector), :t, :d, :f, :ts)
+                        (:p, CAST(:v AS vector), :t, :d, :f, :ts, NULL, 1)
                     ON CONFLICT (prompt) DO UPDATE SET
                         embedding      = EXCLUDED.embedding,
                         final_text     = EXCLUDED.final_text,
                         dfs_pickle     = EXCLUDED.dfs_pickle,
                         figures_pickle = EXCLUDED.figures_pickle,
-                        timestamp      = EXCLUDED.timestamp
+                        timestamp      = EXCLUDED.timestamp,
+                        thumbs_up      = NULL,
+                        run_count      = star_semantic_cache.run_count + 1
                     """,
                     p=user_prompt.strip().lower(),
                     v=vec_str,
@@ -228,19 +242,20 @@ class SemanticCache:
                 exc_info=True,
             )
 
-    def delete_from_cache(self, user_prompt: str):
+    def mark_as_rerun(self, user_prompt: str):
         """
-        Permanently removes any cache entry whose prompt is a semantic match for
-        user_prompt (above SIMILARITY_THRESHOLD), ensuring the next run is always
-        a fresh execution rather than a cache hit.
+        Marks any semantically matching cache entry as downvoted (thumbs_up = FALSE)
+        and increments its run_count, then allows save_to_cache() to overwrite it
+        with a fresh result.
 
-        Uses the same pgvector cosine distance query to identify matching IDs,
-        then deletes them in a single WHERE id = ANY(...) statement.
+        This replaces the old delete_from_cache() approach: entries are preserved
+        for audit/history rather than permanently removed.  The next check_cache()
+        call will skip them because thumbs_up IS NOT FALSE filters them out.
         """
         try:
             query_vector = self._get_embedding(user_prompt)
         except Exception as e:
-            logger.warning(f"Cache eviction embedding failed ({type(e).__name__}): {e}")
+            logger.warning(f"mark_as_rerun embedding failed ({type(e).__name__}): {e}")
             return
 
         vec_str = self._vec_to_str(query_vector)
@@ -263,23 +278,69 @@ class SemanticCache:
                 if not rows:
                     return
 
-                ids_to_delete = [row[0] for row in rows]
+                ids_to_mark = [row[0] for row in rows]
 
                 conn.execute(
-                    sa.text(
-                        "DELETE FROM star_semantic_cache WHERE id = ANY(:ids)"
-                    ),
-                    {"ids": ids_to_delete},
+                    sa.text("""
+                        UPDATE star_semantic_cache
+                        SET    thumbs_up = FALSE,
+                               run_count = run_count + 1
+                        WHERE  id = ANY(:ids)
+                    """),
+                    {"ids": ids_to_mark},
                 )
 
                 logger.info(
-                    f"Cache eviction: removed {len(ids_to_delete)} "
-                    f"entries matching '{user_prompt[:60]}...'"
+                    f"mark_as_rerun: flagged {len(ids_to_mark)} entries for "
+                    f"re-execution matching '{user_prompt[:60]}...'"
                 )
 
         except Exception as e:
             logger.warning(
-                f"Cache eviction query failed ({type(e).__name__}): {e}"
+                f"mark_as_rerun query failed ({type(e).__name__}): {e}"
+            )
+
+    def rate_cache_entry(self, user_prompt: str, thumbs_up: bool):
+        """
+        Records a user's thumbs-up or thumbs-down rating against the cache entry
+        for the given prompt.
+
+        Looks up by exact (normalised) prompt string — no embedding call needed
+        since the prompt stored in the DB was normalised at save time.
+
+        thumbs_up=True  → positive rating; entry remains eligible for future cache hits
+        thumbs_up=False → negative rating; entry is excluded from future cache hits
+        """
+        normalised = user_prompt.strip().lower()
+        rating_label = "👍 thumbs-up" if thumbs_up else "👎 thumbs-down"
+
+        try:
+            engine = get_db_engine()
+            with engine.begin() as conn:
+                result = conn.execute(
+                    sa.text("""
+                        UPDATE star_semantic_cache
+                        SET    thumbs_up = :rating
+                        WHERE  prompt = :prompt
+                    """),
+                    {"rating": thumbs_up, "prompt": normalised},
+                )
+
+                if result.rowcount == 0:
+                    logger.warning(
+                        f"rate_cache_entry: no row found for prompt "
+                        f"'{normalised[:60]}...' — rating not saved."
+                    )
+                else:
+                    logger.info(
+                        f"rate_cache_entry: recorded {rating_label} for "
+                        f"prompt '{normalised[:60]}...'"
+                    )
+
+        except Exception as e:
+            logger.warning(
+                f"rate_cache_entry failed ({type(e).__name__}): {e}",
+                exc_info=True,
             )
 
 

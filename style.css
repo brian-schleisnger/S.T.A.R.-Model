@@ -96,3 +96,37 @@ body {
 footer {
     visibility: hidden;
 }
+
+/* ─── Thumbs Up / Down Rating Buttons ────────────────────────── */
+/* Target the two small rating buttons inside act_col4 specifically
+   by scoping to the chat message content area. This avoids stomping
+   on sidebar or other button styles. */
+[data-testid="stChatMessageContent"] button[kind="secondary"] {
+    padding: 2px 6px !important;
+    font-size: 1.1rem !important;
+    min-height: 2rem !important;
+    line-height: 1.2 !important;
+}
+
+/* ─── Submitted Rating Labels ─────────────────────────────────── */
+.rating-submitted {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    margin-top: 4px;
+}
+
+.rating-up {
+    background-color: #e6f4ea;
+    color: #1e8e3e;
+    border: 1px solid #a8d5b5;
+}
+
+.rating-down {
+    background-color: #fce8e6;
+    color: #c5221f;
+    border: 1px solid #f5b7b5;
+}

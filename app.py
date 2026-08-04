@@ -183,9 +183,31 @@ if "rerun_prompt" not in st.session_state:
     st.session_state.rerun_prompt = None
 if "rerun_msg_index" not in st.session_state:
     st.session_state.rerun_msg_index = None
+if "pending_rating" not in st.session_state:
+    # Stores (msg_index, thumbs_up: bool) for ratings submitted this turn,
+    # processed at the top of the next rerun before history is rendered.
+    st.session_state.pending_rating = None
 
 # Apply CSS after session state so any st.warning() from load_css renders correctly
 load_css()
+
+# ─── 4b. PROCESS PENDING RATINGS ─────────────────────────────────────────
+# Ratings are set by button clicks and stored in session state so they survive
+# the st.rerun() that follows. We commit them to the DB here, at the top of the
+# next render pass, before the chat history loop runs.
+if st.session_state.pending_rating is not None:
+    _rating_index, _thumbs_up = st.session_state.pending_rating
+    st.session_state.pending_rating = None
+
+    _rated_msg = st.session_state.messages[_rating_index]
+    _rated_prompt = _rated_msg.get("prompt", "")
+    _rated_msg["rating"] = "up" if _thumbs_up else "down"
+
+    if _rated_prompt:
+        try:
+            agent_cache.rate_cache_entry(_rated_prompt, _thumbs_up)
+        except Exception as _e:
+            logger.warning(f"Rating commit failed: {_e}")
 
 
 # ─── 5. SIDEBAR ──────────────────────────────────────────────────────────
@@ -307,7 +329,7 @@ for i, msg in enumerate(st.session_state.messages):
                     
             if msg["role"] == "assistant" and (msg.get("dfs") or msg.get("run_log")):
                 st.markdown("---")
-                act_col1, act_col2, act_col3 = st.columns([1, 2, 1])
+                act_col1, act_col2, act_col3, act_col4 = st.columns([1, 2, 1, 1])
                 
                 with act_col1:
                     if msg.get("dfs"):
@@ -339,6 +361,32 @@ for i, msg in enumerate(st.session_state.messages):
                             st.session_state.rerun_msg_index = i
                             st.rerun()
 
+                with act_col4:
+                    # Thumbs up / thumbs down rating — only shown for assistant messages
+                    # that have an associated prompt stored (i.e. came from the agent loop).
+                    existing_rating = msg.get("rating")  # "up", "down", or None
+                    if existing_rating == "up":
+                        st.markdown(
+                            '<div class="rating-submitted rating-up">👍 Helpful</div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif existing_rating == "down":
+                        st.markdown(
+                            '<div class="rating-submitted rating-down">👎 Not helpful</div>',
+                            unsafe_allow_html=True,
+                        )
+                    elif msg.get("prompt"):
+                        # No rating yet — show interactive buttons
+                        tb_col1, tb_col2 = st.columns(2)
+                        with tb_col1:
+                            if st.button("👍", key=f"thumbs_up_{i}", use_container_width=True, help="This response was helpful"):
+                                st.session_state.pending_rating = (i, True)
+                                st.rerun()
+                        with tb_col2:
+                            if st.button("👎", key=f"thumbs_down_{i}", use_container_width=True, help="This response was not helpful"):
+                                st.session_state.pending_rating = (i, False)
+                                st.rerun()
+
 # ─── 8. RE-RUN HANDLER ───────────────────────────────────────────────────
 if st.session_state.rerun_prompt is not None:
     rerun_prompt = st.session_state.rerun_prompt
@@ -348,7 +396,7 @@ if st.session_state.rerun_prompt is not None:
     st.session_state.rerun_msg_index = None
 
     from agent.cache import agent_cache as _cache
-    _cache.delete_from_cache(rerun_prompt)
+    _cache.mark_as_rerun(rerun_prompt)
 
     history_before = st.session_state.messages[: rerun_index - 1]
 
@@ -365,7 +413,9 @@ if st.session_state.rerun_prompt is not None:
                 "content": result["final_text"],
                 "figures": result["figures"],
                 "dfs": result["dfs"],
-                "run_log": result["run_log"]
+                "run_log": result["run_log"],
+                "prompt": rerun_prompt,
+                "rating": None,
             }
             st.rerun()
 
@@ -399,7 +449,9 @@ if prompt := st.chat_input("Ask a question about the data..."):
                 "content": result["final_text"],
                 "figures": result["figures"],
                 "dfs": result["dfs"],
-                "run_log": result["run_log"]
+                "run_log": result["run_log"],
+                "prompt": prompt,
+                "rating": None,
             })
             
             st.rerun()

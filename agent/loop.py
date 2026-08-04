@@ -161,7 +161,7 @@ def decompose_question(user_prompt: str,
     3. If the user is asking a general question, greeting you, or asking about your capabilities, return the user's exact prompt as a single item with category SQL_RETRIEVAL and do NOT generate data queries.
     4. Use the 'Recent Conversation History' to resolve pronouns and missing context. Every sub-question must be fully self-contained.
     5. Do NOT break a single statistical model (Regression, Random Forest, ARIMA, etc.) into separate sub-questions for each metric. Group all requirements for one model into ONE sub-question.
-    6. Make important note of the data structures, and plan your question accordingly. example: if user asks how two metrics compare, have the first subquestion pull those metrics, then have the next subquestion analyze that pulled data."""
+    6. Think and plan your questions sequentially. example: if a user asks for a visualization, you might need one sub-question to pull one data, one sub-question to pull the toehr data, one sub-question to merge the sources together, and ond sub-question to produce the vidualization."""
     
     msgs = [{"role": "user", "content": prompt}]
     
@@ -417,7 +417,7 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
             context_instruction="Preserve all numerical values, metric names, and tool error messages."
         )
 
-    synthesis_prompt = f"""You are a data insights assistant. 
+    synthesis_prompt = f"""You are a data insights assistant writing for business leaders with limited statistical knowledge. 
     User's Original Prompt: {user_prompt}
     Raw Data Extracted across all tools: {raw_outputs_str}
     Relevant Schema: {json.dumps(relevant_schema)}
@@ -425,8 +425,9 @@ def synthesize_final_response(user_prompt: str, raw_outputs: List[str], relevant
     Synthesize the raw data into a clear, business-friendly summary answering the original prompt.
     If any tools failed or returned errors in the raw data, briefly mention what analysis could not be completed and why, alongside the successful insights.
     Do not try and do math. If the user asked for a yearly total and you received monthly totals for the year, provide the monthly totals without attempting to sum them yourself.
-
+    Do not write code or json in your final answer. 
     Don't ever say the word forecast, call it a computer projection if needed. 
+    if the data returned isn't related to the user's prompt, or the user's prompt was unspecific, share what you do have and ask questions to clarify the user's intent.
     
     CRITICAL FORMATTING RULE: 
     Do not use LaTeX formatting for regular text. When mentioning currency, you MUST escape the dollar sign (e.g., \\$10M) so it does not accidentally trigger markdown math blocks."""
