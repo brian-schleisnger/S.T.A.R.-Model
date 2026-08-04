@@ -45,7 +45,7 @@ min_rows = 10
 scenario_min_rows = 3
 Random_state = 42
 split = .2
-Max_depth = 10
+Max_depth = 5
 max_iterations = 500
 rf_min_leaf_size = 3
 
