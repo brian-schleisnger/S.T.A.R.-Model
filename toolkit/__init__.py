@@ -80,5 +80,9 @@ def _flatten_tool(tool: dict) -> dict:
     return tool
 
 
-TOOL_SCHEMAS = [validator for _, validator in TOOL_DISPATCHER.values()]
-TOOLS = [_flatten_tool(pydantic_function_tool(schema)) for schema in TOOL_SCHEMAS]
+TOOLS = []
+for tool_name, (_, schema) in TOOL_DISPATCHER.items():
+    tool_def = pydantic_function_tool(schema)
+    # Explicitly align the JSON schema name to the dispatcher key
+    tool_def["function"]["name"] = tool_name 
+    TOOLS.append(_flatten_tool(tool_def))
