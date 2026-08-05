@@ -14,8 +14,7 @@ from agent.cache import agent_cache
 from agent.categories import CATEGORY_TOOLS
 from agent.context import SessionContext
 from agent.schemas import DecomposedQuestions
-from agent.tool_descriptions import ENRICHED_CATEGORY_REGISTRY
-from toolkit import TOOLS, TOOL_DISPATCHER
+from toolkit import TOOLS, TOOL_DISPATCHER,ENRICHED_CATEGORY_REGISTRY
 from toolkit.base import DATA_DICTIONARY, _extract_text_content, llm_call
 
 
