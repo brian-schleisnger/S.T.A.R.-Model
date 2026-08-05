@@ -133,8 +133,8 @@ class DynamicOpenAIClient:
                         def create(self, *args, **kwargs):
                             model = kwargs.get("model", "")
 
-                            # Claude strictly rejects 'strict: True' in tool definitions
-                            if "claude" in model.lower() and "tools" in kwargs:
+                            # Claude and Gemini both reject 'strict: True' in tool definitions
+                            if ("claude" in model.lower() or "gemini" in model.lower()) and "tools" in kwargs:
                                 safe_tools = copy.deepcopy(kwargs["tools"])
                                 for tool in safe_tools:
                                     if "function" in tool and "strict" in tool["function"]:

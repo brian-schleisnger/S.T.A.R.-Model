@@ -48,8 +48,8 @@ class calculate_mutual_information_tool_schema(BaseModel):
     Use this to determine how much information the features provide about the target variable, capturing both linear and non-linear dependencies.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -79,8 +79,8 @@ class run_kmeans_clustering_tool_schema(BaseModel):
     Use this to discover customer segments, group similar behaviors, or identify natural groupings in the data.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -107,8 +107,8 @@ class run_ols_regression_tool_schema(BaseModel):
     CRITICAL MULTI-TABLE RULE: If combining tables with multiple rows per month (like marketing spend and subcounts), do NOT use TABLE_NAME. Instead, use execute_sql_query_tool first to aggregate (SUM) the data by month and filter correctly, then pass the resulting dataframe_id to this tool.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query."
+        default=None,
+        description="The exact SQL-safe table name(s) to query. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -138,8 +138,8 @@ class run_pca_tool_schema(BaseModel):
     Use this to identify which combinations of variables explain the most variance in the dataset.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -359,8 +359,8 @@ class run_random_forest_tool_schema(BaseModel):
     Use this to find non-linear relationships, classify outcomes, or determine the importance/impact of various features.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -499,8 +499,8 @@ class run_scenario_planning_tool_schema(BaseModel):
     This tool automatically computes baseline averages, applies the hypothetical changes, holds specified control variables constant at their historical means, and returns expected predictions with 95% confidence intervals.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -681,8 +681,8 @@ class execute_python_tool_schema(BaseModel):
     To return data to the LLM, assign the final text output to 'result_text' and any resulting DataFrame to 'result_df'.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query and load into the 'df' variable, e.g., '\"sandbox\".\"acquisition_data_v3\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query and load into the 'df' variable, e.g., '\"sandbox\".\"acquisition_data_v3\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -709,8 +709,8 @@ class generate_barchart_tool_schema(BaseModel):
     Automatically handles pre-aggregation (SUM, AVG, COUNT) to ensure clean visualizations.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -744,8 +744,8 @@ class generate_histogram_tool_schema(BaseModel):
     Generates a histogram with an executive box-plot marginal to visualize data distributions, spread, and outliers.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -776,8 +776,8 @@ class generate_linechart_tool_schema(BaseModel):
     Automatically groups duplicate timestamps and sorts chronologically to prevent erratic line jumps.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(
@@ -812,8 +812,8 @@ class generate_scatterplot_tool_schema(BaseModel):
     Supports querying a single table or automatically joining multiple tables.
     """
     TABLE_NAME: Optional[Union[str, List[str]]] = Field(
-        ..., 
-        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'."
+        default=None,
+        description="The exact SQL-safe table name(s) to query, e.g., '\"sandbox\".\"acquisition_data_v3\"', '\"sandbox\".\"dbs_marketing_sync\"', or '\"sandbox\".\"subcount_data_synced\"'. Omit if passing dataframe_id."
     )
 
     dataframe_id: Optional[str] = Field(

@@ -364,6 +364,11 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 if allowed_names else TOOLS
             )
 
+            # Guard: if no tools are available for this category, skip tool routing entirely
+            if not active_tools:
+                raw_outputs.append(f"Sub-question: {sq_text}\nAnswer: No tools are registered for category '{category_hint}'. Skipping.")
+                break
+
             response = llm_call(
                 messages=msgs, 
                 tools=active_tools, 
@@ -380,8 +385,14 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 break
             
             msgs.append(assistant_msg)
+
+            # Reset per-attempt error flag and collect outputs into a staging list so that
+            # a partial failure on one tool doesn't cause successful outputs to be duplicated
+            # or lost across retry attempts.
             has_turn_error = False
-            
+            attempt_outputs = []
+            attempt_objects = []
+
             for tool_call in assistant_msg["tool_calls"]:
                 call_id = tool_call.get("id", "call_id")
                 tool_name = tool_call["function"]["name"]
@@ -391,9 +402,8 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                 if has_error:
                     has_turn_error = True
                 else:
-                    current_turn_dfs.extend(extracted_objects)
-                    # Append successful outputs dynamically
-                    raw_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
+                    attempt_objects.extend(extracted_objects)
+                    attempt_outputs.append(f"Sub-question: {sq_text}\nTool Used: {tool_name}\nData: {output_text}")
                     
                 msgs.append({
                     "role": "tool",
@@ -401,9 +411,16 @@ def execute_tool_routing(sub_questions: List[Any], relevant_schema: dict, chat_h
                     "name": tool_name,
                     "content": output_text
                 })
-                
-            # Log catastrophic failure only if the final attempt also failed
-            if attempt == Max_retries - 1 and has_turn_error:
+
+            if not has_turn_error:
+                # All tools succeeded — commit outputs and stop retrying this sub-question
+                raw_outputs.extend(attempt_outputs)
+                current_turn_dfs.extend(attempt_objects)
+                break
+            elif attempt == Max_retries - 1:
+                # Final attempt still had errors — commit whatever succeeded and log failure
+                raw_outputs.extend(attempt_outputs)
+                current_turn_dfs.extend(attempt_objects)
                 raw_outputs.append(f"Sub-question: {sq_text}\nFailed after {Max_retries} attempts.")
         
         routing_latencies[f"  ↳ Tool Exec {idx + 1}"] = round(time.perf_counter() - t0_sq, 2)
