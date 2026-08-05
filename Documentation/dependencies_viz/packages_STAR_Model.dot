@@ -1,0 +1,40 @@
+digraph "packages_STAR_Model" {
+rankdir=BT
+charset="utf-8"
+"S.T.A.R.-Model" [color="black", label=<S.T.A.R.-Model>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent" [color="black", label=<S.T.A.R.-Model.agent>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.cache" [color="black", label=<S.T.A.R.-Model.agent.cache>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.categories" [color="black", label=<S.T.A.R.-Model.agent.categories>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.context" [color="black", label=<S.T.A.R.-Model.agent.context>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.loop" [color="black", label=<S.T.A.R.-Model.agent.loop>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.memory" [color="black", label=<S.T.A.R.-Model.agent.memory>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.schemas" [color="black", label=<S.T.A.R.-Model.agent.schemas>, shape="box", style="solid"];
+"S.T.A.R.-Model.agent.tool_descriptions" [color="black", label=<S.T.A.R.-Model.agent.tool_descriptions>, shape="box", style="solid"];
+"S.T.A.R.-Model.app" [color="black", label=<S.T.A.R.-Model.app>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit" [color="black", label=<S.T.A.R.-Model.toolkit>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.analytics" [color="black", label=<S.T.A.R.-Model.toolkit.analytics>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.base" [color="black", label=<S.T.A.R.-Model.toolkit.base>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.ml" [color="black", label=<S.T.A.R.-Model.toolkit.ml>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.transformations" [color="black", label=<S.T.A.R.-Model.toolkit.transformations>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.validators" [color="black", label=<S.T.A.R.-Model.toolkit.validators>, shape="box", style="solid"];
+"S.T.A.R.-Model.toolkit.visuals" [color="black", label=<S.T.A.R.-Model.toolkit.visuals>, shape="box", style="solid"];
+"S.T.A.R.-Model.app" -> "S.T.A.R.-Model.agent.cache" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.app" -> "S.T.A.R.-Model.agent.context" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.app" -> "S.T.A.R.-Model.agent.loop" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.app" -> "S.T.A.R.-Model.toolkit.base" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit" -> "S.T.A.R.-Model.agent.schemas" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit" -> "S.T.A.R.-Model.toolkit.analytics" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit" -> "S.T.A.R.-Model.toolkit.ml" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit" -> "S.T.A.R.-Model.toolkit.transformations" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit" -> "S.T.A.R.-Model.toolkit.visuals" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.analytics" -> "S.T.A.R.-Model.toolkit.base" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.analytics" -> "S.T.A.R.-Model.toolkit.transformations" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.base" -> "S.T.A.R.-Model.toolkit.validators" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.ml" -> "S.T.A.R.-Model.toolkit.base" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.ml" -> "S.T.A.R.-Model.toolkit.transformations" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.transformations" -> "S.T.A.R.-Model.toolkit.base" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.transformations" -> "S.T.A.R.-Model.toolkit.validators" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.visuals" -> "S.T.A.R.-Model.toolkit.base" [arrowhead="open", arrowtail="none"];
+"S.T.A.R.-Model.toolkit.visuals" -> "S.T.A.R.-Model.toolkit.transformations" [arrowhead="open", arrowtail="none"];
+}
+py -m pylint.pyreverse.main -o dot -p STAR_Model .

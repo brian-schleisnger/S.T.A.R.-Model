@@ -1,0 +1,9 @@
+Why you're doing this: to check if there are circular imports before trying to deploy.
+1. if you haven't already, powershell command pip install pylint
+2. powershell command cd path/to/repo
+3. powershell command py -m pylint.pyreverse.main -o dot -p STAR_Model .
+4. two new files should pop up in main directory, both .dot files.
+5. go to VScode, install the graphviz interactive preview extension
+6. go to the new file created with packages in the name
+7. opened in vscode, there will be a little thing in the top right you click on
+8. a visual will pop up - screenshot and give to gemini with prompt 'are there any circular dependencies in this repository? what can be done to clean it up if anything?'
