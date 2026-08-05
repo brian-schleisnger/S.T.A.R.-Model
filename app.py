@@ -349,79 +349,65 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # ─── 7. CHAT HISTORY RENDERING ───────────────────────────────────────────
 for i, msg in enumerate(st.session_state.messages):
-    if msg["role"] in ["user", "assistant"] and msg.get("content"):
-        with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🌐"):
-            st.markdown(msg["content"])
+    if msg["role"] == "assistant" and (msg.get("dfs") or msg.get("run_log")):
+        st.markdown("---")
+        
+        # MOVE EXPANDER OUTSIDE COLUMNS: Now spans full width of the container
+        if msg.get("run_log"):
+            with st.expander("🧠 View Agent Execution Trace", expanded=False):
+                for step_num, log in enumerate(msg["run_log"], 1):
+                    st.markdown(f"**Step {step_num}:**")
+                    clean_log = log.replace('\\n', '\n')
+                    st.code(clean_log, language="python" if "def " in clean_log or "import pandas" in clean_log else "sql" if "SELECT " in clean_log else "text", wrap_lines=True)
 
-            if msg.get("figures"):
-                for j, fig in enumerate(msg["figures"]):
-                    if isinstance(fig, go.Figure):
-                        fig.update_layout(
-                            height=400, 
-                            colorway=["#105e62", "#b2d8d8", "#000000"], 
-                            paper_bgcolor='rgba(0,0,0,0)', 
-                            plot_bgcolor='rgba(0,0,0,0)'
-                        )
-                        st.plotly_chart(fig, use_container_width=True, key=f"fig_{i}_{j}")
-                    
-            if msg["role"] == "assistant" and (msg.get("dfs") or msg.get("run_log")):
-                st.markdown("---")
-                act_col1, act_col2, act_col3, act_col4, act_col5 = st.columns(5)
-                
-                with act_col1:
-                    if msg.get("dfs"):
-                        try:
-                            excel_data = create_excel_buffer(msg["dfs"])
-                            st.download_button(
-                                label="📥 Export Data",
-                                data=excel_data,
-                                file_name=f"agent_data_export_{i}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key=f"download_hist_{i}",
-                                use_container_width=True
-                            )
-                        except Exception as e:
-                            st.warning(f"⚠️ Excel export unavailable: {e}")
-                
-                with act_col2:
-                    if msg.get("run_log"):
-                        with st.expander("🧠 View Agent Execution Trace", expanded=False):
-                            for step_num, log in enumerate(msg["run_log"], 1):
-                                st.markdown(f"**Step {step_num}:**")
-                                clean_log = log.replace('\\n', '\n')
-                                st.code(clean_log, language="python" if "def " in clean_log or "import pandas" in clean_log else "sql" if "SELECT " in clean_log else "text", wrap_lines=True)
+        # Adjusted to 4 columns for the remaining action buttons
+        act_col1, act_col2, act_col3, act_col4 = st.columns(4)
+        
+        with act_col1:
+            if msg.get("dfs"):
+                try:
+                    excel_data = create_excel_buffer(msg["dfs"])
+                    st.download_button(
+                        label="📥 Export Data",
+                        data=excel_data,
+                        file_name=f"agent_data_export_{i}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"download_hist_{i}",
+                        use_container_width=True
+                    )
+                except Exception as e:
+                    st.warning(f"⚠️ Excel export unavailable: {e}")
+        
+        with act_col2:
+            if i > 0 and st.session_state.messages[i - 1]["role"] == "user":
+                if st.button("🔄 Re-run", key=f"rerun_{i}", use_container_width=True):
+                    st.session_state.rerun_prompt = st.session_state.messages[i - 1]["content"]
+                    st.session_state.rerun_msg_index = i
+                    st.rerun()
 
-                with act_col3:
-                    if i > 0 and st.session_state.messages[i - 1]["role"] == "user":
-                        if st.button("🔄 Re-run", key=f"rerun_{i}", use_container_width=True):
-                            st.session_state.rerun_prompt = st.session_state.messages[i - 1]["content"]
-                            st.session_state.rerun_msg_index = i
-                            st.rerun()
+        existing_rating = msg.get("rating")  
+        with act_col3:
+            if existing_rating == "up":
+                st.markdown(
+                    '<div class="rating-submitted rating-up">👍 Helpful</div>',
+                    unsafe_allow_html=True,
+                )
+            elif existing_rating != "down" and msg.get("prompt"):
+                # FIX: Corrected broken unicode character here
+                if st.button("👍 Helpful", key=f"thumbs_up_{i}", use_container_width=True):
+                    st.session_state.pending_rating = (i, True)
+                    st.rerun()
 
-                # Thumbs up / thumbs down rating — only shown for assistant messages
-                # that have an associated prompt stored (i.e. came from the agent loop).
-                existing_rating = msg.get("rating")  # "up", "down", or None
-                with act_col4:
-                    if existing_rating == "up":
-                        st.markdown(
-                            '<div class="rating-submitted rating-up">👍 Helpful</div>',
-                            unsafe_allow_html=True,
-                        )
-                    elif existing_rating != "down" and msg.get("prompt"):
-                        if st.button("� Helpful", key=f"thumbs_up_{i}", use_container_width=True):
-                            st.session_state.pending_rating = (i, True)
-                            st.rerun()
-
-                with act_col5:
-                    if existing_rating == "down":
-                        st.markdown(
-                            '<div class="rating-submitted rating-down">👎 Not helpful</div>',
-                            unsafe_allow_html=True,
-                        )
-                    elif existing_rating != "up" and msg.get("prompt"):
-                        if st.button("👎 Not helpful", key=f"thumbs_down_{i}", use_container_width=True):
-                            st.session_state.pending_rating = (i, False)
-                            st.rerun()
+        with act_col4:
+            if existing_rating == "down":
+                st.markdown(
+                    '<div class="rating-submitted rating-down">👎 Not helpful</div>',
+                    unsafe_allow_html=True,
+                )
+            elif existing_rating != "up" and msg.get("prompt"):
+                if st.button("👎 Not helpful", key=f"thumbs_down_{i}", use_container_width=True):
+                    st.session_state.pending_rating = (i, False)
+                    st.rerun()
 
 # ─── 8. RE-RUN HANDLER ───────────────────────────────────────────────────
 if st.session_state.rerun_prompt is not None:
